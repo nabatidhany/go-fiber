@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    container_name: golang_shollu
+    restart: always
+    environment:
+      DB_HOST: "185.232.14.52"
+      DB_PORT: "3306"
+      DB_USER: "u483254679_shollu"
+      DB_PASSWORD: "Shollu2025"
+      DB_NAME: "u483254679_shollu"
+      JWT_SECRET: "supersecretjwt"
+    ports:
+      - "3000:3000"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"   # Maksimal 50% dari 1 core CPU
+          memory: "256M" # Maksimal 256MB RAM
