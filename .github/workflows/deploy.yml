@@ -12,16 +12,16 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup SSH Key
+      - name: Setup AWS SSH Key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
+          echo "${{ secrets.EC2_PEM_KEY }}" > ~/.ssh/aws-key.pem
+          chmod 600 ~/.ssh/aws-key.pem
           ssh-keyscan -H 54.234.102.65 >> ~/.ssh/known_hosts
 
       - name: Deploy to EC2
         run: |
-          ssh -i ~/.ssh/id_rsa ubuntu@54.234.102.65 << 'EOF'
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/aws-key.pem ubuntu@54.234.102.65 << 'EOF'
             cd /home/ubuntu/backend
             git pull origin main
             docker-compose down
