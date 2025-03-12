@@ -21,6 +21,10 @@ func main() {
 		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
 	}))
 
+	app.Options("*", func(c *fiber.Ctx) error {
+		return c.SendStatus(fiber.StatusNoContent) // 204 No Content untuk preflight
+	})
+
 	routes.SetupRoutes(app)
 
 	app.Listen("0.0.0.0:3000")
