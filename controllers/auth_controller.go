@@ -9,7 +9,6 @@ import (
 	"shollu/utils"
 	"time"
 
-	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 )
@@ -19,8 +18,6 @@ type LoginInput struct {
 	Password string `json:"password"`
 }
 
-var validate = validator.New()
-
 func Register(c *fiber.Ctx) error {
 	// Parse body JSON
 	var req models.RegisterRequest
@@ -29,7 +26,7 @@ func Register(c *fiber.Ctx) error {
 	}
 
 	// Validasi input
-	err := validate.Struct(req)
+	err := utils.Validate.Struct(req)
 	if err != nil {
 		errors := utils.FormatValidationErrors(err)
 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"errors": errors})

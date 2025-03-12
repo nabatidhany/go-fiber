@@ -21,6 +21,7 @@ func SetupRoutes(app *fiber.App) {
 	api := app.Group("/api")
 	api.Post("/login", controllers.Login)
 	api.Post("/register", controllers.Register)
+	api.Post("/register-itikaf", controllers.RegisterPesertaItikaf)
 
 	apiV1 := app.Group("/api/v1")
 	apiV1.Post("/absent-qr", ApiKeyMiddleware, controllers.SaveAbsenQR)
