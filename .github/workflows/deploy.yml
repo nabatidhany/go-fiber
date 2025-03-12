@@ -22,7 +22,7 @@ jobs:
       - name: Deploy to EC2
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/aws-key.pem ubuntu@54.234.102.65 << 'EOF'
-            cd /home/ubuntu/backend
+            cd /var/www/go-fiber
             git pull origin main
             docker-compose down
             docker-compose up -d --build
