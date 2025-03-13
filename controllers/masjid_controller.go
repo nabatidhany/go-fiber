@@ -9,13 +9,15 @@ import (
 
 // Struct untuk response masjid
 type Masjid struct {
-	ID   int    `json:"id"`
-	Name string `json:"name"`
+	ID     int    `json:"id"`
+	Name   string `json:"name"`
+	Alamat string `json:"alamat"`
 }
 
 // Handler untuk mendapatkan daftar masjid
 func GetMasjidList(c *fiber.Ctx) error {
-	rows, err := database.DB.Query("SELECT id, nama FROM masjid")
+	idEvent := c.Params("id_event")
+	rows, err := database.DB.Query("SELECT masjid.id, masjid.nama, masjid.alamat FROM masjid left join setting on masjid.id = setting.id_masjid where setting.id_event = ?", idEvent)
 	if err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch masjid"})
 	}
