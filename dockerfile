@@ -14,7 +14,7 @@ ENV GO111MODULE=on \
 WORKDIR /app
 
 # Copy module files terlebih dahulu (untuk caching)
-COPY go.mod go.sum ./
+COPY go.mod go.sum ./  
 RUN go mod download
 
 # Copy seluruh file project
@@ -26,8 +26,14 @@ RUN go build -ldflags="-s -w" -o main .
 # Gunakan Alpine untuk runtime yang lebih ringan
 FROM alpine:latest  
 
+# Install `tzdata` di tahap runtime
+RUN apk add --no-cache tzdata  
+
 # Set folder kerja dalam container
 WORKDIR /root/
+
+# Set zona waktu ke Asia/Jakarta
+ENV TZ=Asia/Jakarta
 
 # Copy binary dari tahap sebelumnya
 COPY --from=builder /app/main .
