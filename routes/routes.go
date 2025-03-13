@@ -24,6 +24,7 @@ func SetupRoutes(app *fiber.App) {
 	api.Post("/register-itikaf", controllers.RegisterPesertaItikaf)
 	api.Get("/register-masjid/:id_event", controllers.GetMasjidList)
 	api.Get("/rekap-absen/:id_masjid", controllers.GetRekapAbsen)
+	api.Get("/get-masjid/:id_masjid", controllers.GetMasjidByID)
 
 	apiV1 := app.Group("/api/v1")
 	apiV1.Post("/absent-qr", ApiKeyMiddleware, controllers.SaveAbsenQR)

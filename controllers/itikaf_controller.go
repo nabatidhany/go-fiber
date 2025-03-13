@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"database/sql"
 	"net/http"
 	"shollu/database"
 	"time"
@@ -14,13 +13,6 @@ type RekapAbsen struct {
 	UserID   int       `json:"user_id"`
 	Fullname string    `json:"fullname"`
 	Jam      time.Time `json:"jam"`
-}
-
-// Struct untuk menyimpan informasi masjid
-type MasjidInfo struct {
-	Nama   string `json:"name"`
-	Alamat string `json:"alamat"`
-	Foto   string `json:"foto"`
 }
 
 // Handler untuk mendapatkan rekap absen berdasarkan filter tanggal
@@ -36,19 +28,6 @@ func GetRekapAbsen(c *fiber.Ctx) error {
 
 	var query string
 	var args []interface{}
-
-	// Ambil informasi masjid
-	var masjid MasjidInfo
-	err := database.DB.QueryRow(`
-		SELECT nama, alamat, foto FROM masjid WHERE id = ?
-	`, idMasjid).Scan(&masjid.Nama, &masjid.Alamat, &masjid.Foto)
-
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "Masjid not found"})
-		}
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch masjid data"})
-	}
 
 	switch idEvent {
 	case "1":
@@ -140,7 +119,6 @@ func GetRekapAbsen(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"message": "Success",
-		"masjid":  masjid,
 		"data":    rekapList,
 	})
 }

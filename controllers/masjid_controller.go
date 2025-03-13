@@ -14,6 +14,14 @@ type Masjid struct {
 	Alamat string `json:"alamat"`
 }
 
+// Struct untuk response masjid
+type MasjidGet struct {
+	ID     int    `json:"id"`
+	Name   string `json:"name"`
+	Alamat string `json:"alamat"`
+	Foto   string `json:"foto"`
+}
+
 // Handler untuk mendapatkan daftar masjid
 func GetMasjidList(c *fiber.Ctx) error {
 	idEvent := c.Params("id_event")
@@ -42,5 +50,20 @@ func GetMasjidList(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"message": "Success",
 		"data":    masjids,
+	})
+}
+
+func GetMasjidByID(c *fiber.Ctx) error {
+	idMasjid := c.Params("id_masjid")
+	var masjid MasjidGet
+
+	err := database.DB.QueryRow("SELECT id, nama, alamat, foto FROM masjid WHERE id = ?", idMasjid).Scan(&masjid.ID, &masjid.Name, &masjid.Alamat, &masjid.Foto)
+	if err != nil {
+		return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "Masjid not found"})
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "Success",
+		"data":    masjid,
 	})
 }
