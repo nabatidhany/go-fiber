@@ -28,7 +28,7 @@ func GetMasjidList(c *fiber.Ctx) error {
 	// Iterasi hasil query
 	for rows.Next() {
 		var masjid Masjid
-		if err := rows.Scan(&masjid.ID, &masjid.Name); err != nil {
+		if err := rows.Scan(&masjid.ID, &masjid.Name, &masjid.Alamat); err != nil {
 			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "Error reading data"})
 		}
 		masjids = append(masjids, masjid)
