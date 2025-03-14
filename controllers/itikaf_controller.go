@@ -34,7 +34,7 @@ func GetRekapAbsen(c *fiber.Ctx) error {
 		query = `
 			SELECT absensi.user_id, COALESCE(peserta.fullname, '') AS fullname, absensi.created_at AS jam
 			FROM absensi
-			LEFT JOIN petugas ON absensi.mesin_id = petugas.id
+			LEFT JOIN petugas ON absensi.mesin_id = petugas.id_user
 			LEFT JOIN peserta ON absensi.user_id = peserta.id
 			WHERE absensi.event_id = ? AND petugas.id_masjid = ?
 			AND DATE(absensi.jam) = DATE(?)`
