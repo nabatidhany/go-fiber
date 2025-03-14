@@ -36,6 +36,17 @@ func SaveAbsenQR(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "No matching QR code found"})
 	}
 
+	// Cek apakah user terdaftar dalam event yang sesuai
+	var exists bool
+	err = database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM detail_peserta WHERE id_peserta = ? AND id_event = ?)", userID, body.EventID).Scan(&exists)
+	if err != nil {
+		log.Println("Error checking event participation:", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Database error while checking event participation"})
+	}
+	if !exists {
+		return c.Status(404).JSON(fiber.Map{"error": "User is not registered for this event"})
+	}
+
 	_, err = database.DB.Exec("INSERT INTO absensi (user_id, finger_id, jam, mesin_id, event_id) VALUES (?, ?, ?, ?, ?)",
 		userID, body.QRCode, time.Now().UTC(), body.MesinID, body.EventID)
 	if err != nil {
