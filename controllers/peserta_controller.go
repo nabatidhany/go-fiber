@@ -20,6 +20,7 @@ type RegisterPesertaRequest struct {
 	MasjidID   int    `json:"masjid_id" validate:"required,min=1"`
 	IsHideName bool   `json:"isHideName"`
 	QRCode     string `json:"qrCode" validate:"omitempty,len=12"`
+	EventID    int    `json:"event_id" validate:"omitempty,min=1"`
 }
 
 func GenerateRandomID() string {
@@ -74,6 +75,12 @@ func RegisterPesertaItikaf(c *fiber.Ctx) error {
 		}
 	}
 
+	// Gunakan Event ID dari request jika diberikan, atau gunakan default 2
+	eventID := req.EventID
+	if eventID == 0 {
+		eventID = 2
+	}
+
 	// Insert ke `peserta`
 	result, err := database.DB.Exec("INSERT INTO peserta (fullname, contact, gender, dob, masjid_id, isHideName, qr_code, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
 		req.FullName, req.Contact, req.Gender, dob, req.MasjidID, req.IsHideName, qrCode, 1)
@@ -88,7 +95,7 @@ func RegisterPesertaItikaf(c *fiber.Ctx) error {
 	}
 
 	// Insert ke `detail_peserta`
-	_, err = database.DB.Exec("INSERT INTO detail_peserta (id_peserta, id_event, status) VALUES (?, ?, ?)", idPeserta, 2, 1)
+	_, err = database.DB.Exec("INSERT INTO detail_peserta (id_peserta, id_event, status) VALUES (?, ?, ?)", idPeserta, eventID, 1)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to insert detail peserta"})
 	}
