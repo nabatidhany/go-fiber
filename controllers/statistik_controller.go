@@ -62,24 +62,30 @@ func GetEventStatistics(c *fiber.Ctx) error {
 	masjidStats := []map[string]interface{}{}
 	rows, err := database.DB.Query(`
 		SELECT 
-			m.id AS masjid_id, 
-			m.nama AS masjid_nama,
-			COALESCE(male_count, 0) AS male_count,
-			COALESCE(female_count, 0) AS female_count
+				m.id AS masjid_id, 
+				m.nama AS masjid_nama,
+				COALESCE(male_count, 0) AS male_count,
+				COALESCE(female_count, 0) AS female_count
 		FROM masjid m
 		LEFT JOIN (
-			SELECT 
-				p.id_masjid,
-				SUM(CASE WHEN peserta.gender = 'male' THEN 1 ELSE 0 END) AS male_count,
-				SUM(CASE WHEN peserta.gender = 'female' THEN 1 ELSE 0 END) AS female_count
-			FROM absensi
-			JOIN peserta ON absensi.user_id = peserta.id
-			JOIN petugas p ON absensi.mesin_id = p.id_user
-			WHERE absensi.event_id = ? 
-			AND DATE(absensi.created_at) = DATE(NOW())
-			GROUP BY p.id_masjid
+				SELECT 
+						p.id_masjid,
+						COUNT(DISTINCT CASE WHEN peserta.gender = 'male' THEN absensi.user_id END) AS male_count,
+						COUNT(DISTINCT CASE WHEN peserta.gender = 'female' THEN absensi.user_id END) AS female_count
+				FROM absensi
+				JOIN peserta ON absensi.user_id = peserta.id
+				JOIN petugas p ON absensi.mesin_id = p.id_user
+				WHERE absensi.event_id = ? 
+				AND DATE(absensi.created_at) = DATE(NOW())
+				GROUP BY p.id_masjid
 		) AS absensi_stats ON m.id = absensi_stats.id_masjid
-		WHERE m.id IN (SELECT DISTINCT petugas.id_masjid FROM petugas WHERE petugas.id_user IN (SELECT mesin_id FROM absensi WHERE event_id = ?))
+		WHERE m.id IN (
+				SELECT DISTINCT petugas.id_masjid 
+				FROM petugas 
+				WHERE petugas.id_user IN (
+						SELECT DISTINCT mesin_id FROM absensi WHERE event_id = ?
+				)
+		)
 	`, eventID, eventID)
 
 	if err != nil {
