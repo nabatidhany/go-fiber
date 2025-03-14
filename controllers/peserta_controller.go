@@ -19,6 +19,7 @@ type RegisterPesertaRequest struct {
 	Dob        string `json:"dob" validate:"required"`
 	MasjidID   int    `json:"masjid_id" validate:"required,min=1"`
 	IsHideName bool   `json:"isHideName"`
+	QRCode     string `json:"qrCode" validate:"omitempty,len=12"`
 }
 
 func GenerateRandomID() string {
@@ -57,8 +58,21 @@ func RegisterPesertaItikaf(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Nomor HP sudah terdaftar"})
 	}
 
-	// Generate QR Code
-	qrCode := GenerateRandomID()
+	// Gunakan QR Code dari request jika diberikan, atau generate yang baru
+	qrCode := req.QRCode
+	if qrCode == "" {
+		qrCode = GenerateRandomID()
+	} else {
+		// Periksa apakah QR Code sudah ada di database
+		var qrExists int
+		err = database.DB.QueryRow("SELECT COUNT(*) FROM peserta WHERE qr_code = ?", qrCode).Scan(&qrExists)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Database error"})
+		}
+		if qrExists > 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "QR Code sudah digunakan"})
+		}
+	}
 
 	// Insert ke `peserta`
 	result, err := database.DB.Exec("INSERT INTO peserta (fullname, contact, gender, dob, masjid_id, isHideName, qr_code, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
