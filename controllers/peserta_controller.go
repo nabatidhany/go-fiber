@@ -100,5 +100,10 @@ func RegisterPesertaItikaf(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to insert detail peserta"})
 	}
 
-	return c.Status(http.StatusCreated).JSON(fiber.Map{"message": "Peserta registered successfully"})
+	// return c.Status(http.StatusCreated).JSON(fiber.Map{"message": "Peserta registered successfully"})
+	return c.Status(http.StatusCreated).JSON(fiber.Map{
+		"message":    "Peserta registered successfully",
+		"qr_code":    qrCode,
+		"is_peserta": idPeserta,
+	})
 }
