@@ -13,7 +13,7 @@ type RekapAbsen struct {
 	UserID     int       `json:"user_id"`
 	Fullname   string    `json:"fullname"`
 	Jam        time.Time `json:"jam"`
-	IsHideName int       `json:isHideName`
+	IsHideName int       `json:"isHideName"`
 }
 
 // Handler untuk mendapatkan rekap absen berdasarkan filter tanggal
@@ -104,7 +104,7 @@ func GetRekapAbsen(c *fiber.Ctx) error {
 
 	for rows.Next() {
 		var rekap RekapAbsen
-		if err := rows.Scan(&rekap.UserID, &rekap.Fullname, &rekap.Jam); err != nil {
+		if err := rows.Scan(&rekap.UserID, &rekap.Fullname, &rekap.Jam, &rekap.IsHideName); err != nil {
 			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
 		rekapList = append(rekapList, rekap)
