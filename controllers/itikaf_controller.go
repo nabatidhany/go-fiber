@@ -10,9 +10,10 @@ import (
 
 // Struct untuk response rekap absensi
 type RekapAbsen struct {
-	UserID   int       `json:"user_id"`
-	Fullname string    `json:"fullname"`
-	Jam      time.Time `json:"jam"`
+	UserID     int       `json:"user_id"`
+	Fullname   string    `json:"fullname"`
+	Jam        time.Time `json:"jam"`
+	IsHideName int       `json:isHideName`
 }
 
 // Handler untuk mendapatkan rekap absen berdasarkan filter tanggal
@@ -32,7 +33,7 @@ func GetRekapAbsen(c *fiber.Ctx) error {
 	switch idEvent {
 	case "1":
 		query = `
-			SELECT absensi.user_id, COALESCE(peserta.fullname, '') AS fullname, absensi.created_at AS jam
+			SELECT absensi.user_id, COALESCE(peserta.fullname, '') AS fullname, absensi.created_at AS jam, peserta.isHideName
 			FROM absensi
 			LEFT JOIN petugas ON absensi.mesin_id = petugas.id_user
 			LEFT JOIN peserta ON absensi.user_id = peserta.id
@@ -41,7 +42,7 @@ func GetRekapAbsen(c *fiber.Ctx) error {
 		args = append(args, idEvent, idMasjid, tanggal)
 	case "2":
 		query = `
-			SELECT absensi.user_id, COALESCE(peserta.fullname, '') AS fullname, absensi.created_at AS jam
+			SELECT absensi.user_id, COALESCE(peserta.fullname, '') AS fullname, absensi.created_at AS jam, peserta.isHideName
 			FROM absensi
 			LEFT JOIN petugas ON absensi.mesin_id = petugas.id_user
 			LEFT JOIN peserta ON absensi.user_id = peserta.id
@@ -81,7 +82,7 @@ func GetRekapAbsen(c *fiber.Ctx) error {
 		}
 
 		query = `
-			SELECT absensi.user_id, COALESCE(peserta.fullname, '') AS fullname, absensi.created_at AS jam
+			SELECT absensi.user_id, COALESCE(peserta.fullname, '') AS fullname, absensi.created_at AS jam, peserta.isHideName
 			FROM absensi
 			LEFT JOIN petugas ON absensi.mesin_id = petugas.id_user
 			LEFT JOIN peserta ON absensi.user_id = peserta.id
