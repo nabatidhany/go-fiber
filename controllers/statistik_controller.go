@@ -118,7 +118,7 @@ func GetEventStatistics(c *fiber.Ctx) error {
 			SELECT 
 					m.id AS masjid_id, 
 					m.nama AS masjid_nama,
-					m.alamat
+					m.alamat,
 					COALESCE(COUNT(DISTINCT CASE WHEN peserta.gender = 'male' THEN absensi.user_id END), 0) AS male_count,
 					COALESCE(COUNT(DISTINCT CASE WHEN peserta.gender = 'female' THEN absensi.user_id END), 0) AS female_count,
 					COALESCE(COUNT(DISTINCT absensi.user_id), 0) AS total_count
