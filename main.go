@@ -6,7 +6,9 @@ import (
 	"shollu/routes"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/adaptor"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -26,6 +28,9 @@ func main() {
 	})
 
 	routes.SetupRoutes(app)
+
+	// Endpoint `/metrics` untuk Prometheus
+	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
 
 	app.Listen("0.0.0.0:3000")
 }
