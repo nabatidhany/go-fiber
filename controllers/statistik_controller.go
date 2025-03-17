@@ -59,34 +59,77 @@ func GetEventStatistics(c *fiber.Ctx) error {
 	}
 
 	// Query untuk mendapatkan jumlah kehadiran pria & wanita di masing-masing masjid
+	// masjidStats := []map[string]interface{}{}
+	// rows, err := database.DB.Query(`
+	// 	SELECT
+	// 			m.id AS masjid_id,
+	// 			m.nama AS masjid_nama,
+	// 			COALESCE(male_count, 0) AS male_count,
+	// 			COALESCE(female_count, 0) AS female_count
+	// 	FROM masjid m
+	// 	LEFT JOIN (
+	// 			SELECT
+	// 					p.id_masjid,
+	// 					COUNT(DISTINCT CASE WHEN peserta.gender = 'male' THEN absensi.user_id END) AS male_count,
+	// 					COUNT(DISTINCT CASE WHEN peserta.gender = 'female' THEN absensi.user_id END) AS female_count
+	// 			FROM absensi
+	// 			JOIN peserta ON absensi.user_id = peserta.id
+	// 			JOIN petugas p ON absensi.mesin_id = p.id_user
+	// 			WHERE absensi.event_id = ?
+	// 			AND DATE(absensi.created_at) = DATE(NOW())
+	// 			GROUP BY p.id_masjid
+	// 	) AS absensi_stats ON m.id = absensi_stats.id_masjid
+	// 	WHERE m.id IN (
+	// 			SELECT DISTINCT petugas.id_masjid
+	// 			FROM petugas
+	// 			WHERE petugas.id_user IN (
+	// 					SELECT DISTINCT mesin_id FROM absensi WHERE event_id = ?
+	// 			)
+	// 	)
+	// `, eventID, eventID)
+
+	// if err != nil {
+	// 	log.Println("Error fetching masjid attendance statistics:", err)
+	// 	return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch masjid attendance statistics"})
+	// }
+	// defer rows.Close()
+
+	// // Menyimpan hasil query masjid
+	// for rows.Next() {
+	// 	var masjidID int
+	// 	var masjidNama string
+	// 	var maleCount, femaleCount int
+
+	// 	if err := rows.Scan(&masjidID, &masjidNama, &maleCount, &femaleCount); err != nil {
+	// 		log.Println("Error scanning masjid row:", err)
+	// 		continue
+	// 	}
+
+	// 	masjidStats = append(masjidStats, map[string]interface{}{
+	// 		"masjid_id":    masjidID,
+	// 		"masjid_nama":  masjidNama,
+	// 		"male_count":   maleCount,
+	// 		"female_count": femaleCount,
+	// 	})
+	// }
+
 	masjidStats := []map[string]interface{}{}
 	rows, err := database.DB.Query(`
-		SELECT 
-				m.id AS masjid_id, 
-				m.nama AS masjid_nama,
-				COALESCE(male_count, 0) AS male_count,
-				COALESCE(female_count, 0) AS female_count
-		FROM masjid m
-		LEFT JOIN (
-				SELECT 
-						p.id_masjid,
-						COUNT(DISTINCT CASE WHEN peserta.gender = 'male' THEN absensi.user_id END) AS male_count,
-						COUNT(DISTINCT CASE WHEN peserta.gender = 'female' THEN absensi.user_id END) AS female_count
-				FROM absensi
-				JOIN peserta ON absensi.user_id = peserta.id
-				JOIN petugas p ON absensi.mesin_id = p.id_user
-				WHERE absensi.event_id = ? 
-				AND DATE(absensi.created_at) = DATE(NOW())
-				GROUP BY p.id_masjid
-		) AS absensi_stats ON m.id = absensi_stats.id_masjid
-		WHERE m.id IN (
-				SELECT DISTINCT petugas.id_masjid 
-				FROM petugas 
-				WHERE petugas.id_user IN (
-						SELECT DISTINCT mesin_id FROM absensi WHERE event_id = ?
-				)
-		)
-	`, eventID, eventID)
+			SELECT 
+					m.id AS masjid_id, 
+					m.nama AS masjid_nama,
+					COALESCE(COUNT(DISTINCT CASE WHEN peserta.gender = 'male' THEN absensi.user_id END), 0) AS male_count,
+					COALESCE(COUNT(DISTINCT CASE WHEN peserta.gender = 'female' THEN absensi.user_id END), 0) AS female_count,
+					COALESCE(COUNT(DISTINCT absensi.user_id), 0) AS total_count
+			FROM masjid m
+			LEFT JOIN petugas p ON p.id_masjid = m.id
+			LEFT JOIN absensi ON p.id_user = absensi.mesin_id 
+					AND absensi.event_id = ? 
+					AND DATE(absensi.created_at) = DATE(NOW())
+			LEFT JOIN peserta ON absensi.user_id = peserta.id
+			GROUP BY m.id, m.nama
+			ORDER BY total_count DESC
+	`, eventID)
 
 	if err != nil {
 		log.Println("Error fetching masjid attendance statistics:", err)
@@ -98,9 +141,9 @@ func GetEventStatistics(c *fiber.Ctx) error {
 	for rows.Next() {
 		var masjidID int
 		var masjidNama string
-		var maleCount, femaleCount int
+		var maleCount, femaleCount, totalCount int
 
-		if err := rows.Scan(&masjidID, &masjidNama, &maleCount, &femaleCount); err != nil {
+		if err := rows.Scan(&masjidID, &masjidNama, &maleCount, &femaleCount, &totalCount); err != nil {
 			log.Println("Error scanning masjid row:", err)
 			continue
 		}
@@ -110,6 +153,7 @@ func GetEventStatistics(c *fiber.Ctx) error {
 			"masjid_nama":  masjidNama,
 			"male_count":   maleCount,
 			"female_count": femaleCount,
+			"total_count":  totalCount,
 		})
 	}
 
