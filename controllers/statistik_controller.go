@@ -119,10 +119,12 @@ func GetEventStatistics(c *fiber.Ctx) error {
 					m.id AS masjid_id, 
 					m.nama AS masjid_nama,
 					m.alamat,
+					regional.nama as nama_regional,
 					COALESCE(COUNT(DISTINCT CASE WHEN peserta.gender = 'male' THEN absensi.user_id END), 0) AS male_count,
 					COALESCE(COUNT(DISTINCT CASE WHEN peserta.gender = 'female' THEN absensi.user_id END), 0) AS female_count,
 					COALESCE(COUNT(DISTINCT absensi.user_id), 0) AS total_count
 			FROM masjid m
+			LEFT JOINT regional ON regional.id = m.regional_id
 			LEFT JOIN setting on setting.id_masjid = m.id
 			LEFT JOIN petugas p ON p.id_masjid = m.id
 			LEFT JOIN absensi ON p.id_user = absensi.mesin_id 
@@ -145,20 +147,22 @@ func GetEventStatistics(c *fiber.Ctx) error {
 		var masjidID int
 		var masjidNama string
 		var masjidAlamat string
+		var masjidRegional string
 		var maleCount, femaleCount, totalCount int
 
-		if err := rows.Scan(&masjidID, &masjidNama, &masjidAlamat, &maleCount, &femaleCount, &totalCount); err != nil {
+		if err := rows.Scan(&masjidID, &masjidNama, &masjidAlamat, &masjidRegional, &maleCount, &femaleCount, &totalCount); err != nil {
 			log.Println("Error scanning masjid row:", err)
 			continue
 		}
 
 		masjidStats = append(masjidStats, map[string]interface{}{
-			"masjid_id":     masjidID,
-			"masjid_nama":   masjidNama,
-			"masjid_alamat": masjidAlamat,
-			"male_count":    maleCount,
-			"female_count":  femaleCount,
-			"total_count":   totalCount,
+			"masjid_id":       masjidID,
+			"masjid_nama":     masjidNama,
+			"masjid_alamat":   masjidAlamat,
+			"masjid_regional": masjidRegional,
+			"male_count":      maleCount,
+			"female_count":    femaleCount,
+			"total_count":     totalCount,
 		})
 	}
 
