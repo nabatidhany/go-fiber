@@ -123,14 +123,16 @@ func GetEventStatistics(c *fiber.Ctx) error {
 					COALESCE(COUNT(DISTINCT CASE WHEN peserta.gender = 'female' THEN absensi.user_id END), 0) AS female_count,
 					COALESCE(COUNT(DISTINCT absensi.user_id), 0) AS total_count
 			FROM masjid m
+			LEFT JOIN setting on setting.id_masjid = m.id
 			LEFT JOIN petugas p ON p.id_masjid = m.id
 			LEFT JOIN absensi ON p.id_user = absensi.mesin_id 
 					AND absensi.event_id = ? 
 					AND DATE(absensi.created_at) = DATE(NOW())
 			LEFT JOIN peserta ON absensi.user_id = peserta.id
+			where setting.id_event = ?
 			GROUP BY m.id, m.nama
 			ORDER BY total_count DESC
-	`, eventID)
+	`, eventID, eventID)
 
 	if err != nil {
 		log.Println("Error fetching masjid attendance statistics:", err)
