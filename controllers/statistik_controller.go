@@ -124,7 +124,7 @@ func GetEventStatistics(c *fiber.Ctx) error {
 					COALESCE(COUNT(DISTINCT CASE WHEN peserta.gender = 'female' THEN absensi.user_id END), 0) AS female_count,
 					COALESCE(COUNT(DISTINCT absensi.user_id), 0) AS total_count
 			FROM masjid m
-			LEFT JOINT regional ON regional.id = m.regional_id
+			LEFT JOIN regional ON regional.id = m.regional_id
 			LEFT JOIN setting on setting.id_masjid = m.id
 			LEFT JOIN petugas p ON p.id_masjid = m.id
 			LEFT JOIN absensi ON p.id_user = absensi.mesin_id 
