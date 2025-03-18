@@ -54,8 +54,12 @@ func main() {
 
 	app := fiber.New()
 
-	// Middleware untuk mengukur request dan latensi
+	// Middleware Prometheus (hindari logging `/metrics`)
 	app.Use(func(c *fiber.Ctx) error {
+		if c.Path() == "/metrics" {
+			return c.Next()
+		}
+
 		method := c.Method()
 		path := normalizePath(c.Path()) // Normalisasi path
 
