@@ -1,6 +1,7 @@
 package main
 
 import (
+	"regexp"
 	"shollu/config"
 	"shollu/database"
 	"shollu/routes"
@@ -12,6 +13,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+// Regex untuk mengganti angka dalam path menjadi ":id"
+var dynamicPathPattern = regexp.MustCompile(`/\d+`)
+
+// Fungsi untuk normalisasi path
+func normalizePath(path string) string {
+	return dynamicPathPattern.ReplaceAllString(path, "/:id")
+}
 
 // Buat metrik Prometheus
 var (
@@ -48,15 +57,16 @@ func main() {
 	// Middleware untuk mengukur request dan latensi
 	app.Use(func(c *fiber.Ctx) error {
 		method := c.Method()
-		path := c.Path()
+		path := normalizePath(c.Path()) // Normalisasi path
 
-		timer := prometheus.NewTimer(httpRequestDuration.WithLabelValues(method, path))
+		histogram := httpRequestDuration.WithLabelValues(method, path)
+		timer := prometheus.NewTimer(histogram)
 		defer timer.ObserveDuration()
 
 		err := c.Next()
 
-		status := c.Response().StatusCode()
-		httpRequestsTotal.WithLabelValues(method, path, strconv.Itoa(status)).Inc()
+		status := strconv.Itoa(c.Response().StatusCode())
+		httpRequestsTotal.WithLabelValues(method, path, status).Inc()
 
 		return err
 	})
