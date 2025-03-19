@@ -61,7 +61,16 @@ func main() {
 		}
 
 		method := c.Method()
-		path := normalizePath(c.Path()) // Normalisasi path
+		if len(method) > 6 { // HTTP method maksimal 6 karakter (GET, POST, PUT, DELETE, PATCH, OPTIONS)
+			method = "UNKNOWN"
+		}
+
+		path := normalizePath(c.Path())
+
+		// Pastikan path tidak kosong atau mengandung karakter aneh
+		if path == "" || path == "/" {
+			path = "root"
+		}
 
 		histogram := httpRequestDuration.WithLabelValues(method, path)
 		timer := prometheus.NewTimer(histogram)
