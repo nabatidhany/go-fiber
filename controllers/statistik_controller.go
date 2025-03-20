@@ -26,7 +26,7 @@ func GetNewRegistrantStatistics(c *fiber.Ctx) error {
     COALESCE(COUNT(DISTINCT peserta.id), 0) AS total_count
 		FROM masjid m
 		LEFT JOIN peserta ON m.id = peserta.masjid_id
-				AND DATE(peserta.created_at) = DATE(?)
+				AND DATE(CONVERT_TZ(peserta.created_at, '+00:00', '+07:00')) = DATE(?)
 		left JOIN setting on setting.id_masjid = m.id
 		where setting.id_event = ?
 		GROUP BY m.id, m.nama
@@ -97,7 +97,7 @@ func GetEventStatistics(c *fiber.Ctx) error {
 				(SELECT COUNT(DISTINCT user_id) 
 				 FROM absensi 
 				 WHERE event_id = ? 
-				 AND DATE(created_at) = DATE(NOW())) AS total_absen,
+				 AND DATE(CONVERT_TZ(created_at, '+00:00', '+07:00')) = DATE(CONVERT_TZ(NOW(), '+00:00', '+07:00'))) AS total_absen,
 
 				(SELECT COUNT(*) 
 				 FROM peserta 
@@ -188,7 +188,7 @@ func GetEventStatistics(c *fiber.Ctx) error {
 			LEFT JOIN petugas p ON p.id_masjid = m.id
 			LEFT JOIN absensi ON p.id_user = absensi.mesin_id 
 					AND absensi.event_id = ? 
-					AND DATE(absensi.created_at) = DATE(NOW())
+					AND DATE(CONVERT_TZ(absensi.created_at, '+00:00', '+07:00')) = DATE(CONVERT_TZ(NOW(), '+00:00', '+07:00'))
 			LEFT JOIN peserta ON absensi.user_id = peserta.id
 			where setting.id_event = ?
 			GROUP BY m.id, m.nama
