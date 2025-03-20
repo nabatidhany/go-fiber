@@ -38,7 +38,7 @@ func GetRekapAbsen(c *fiber.Ctx) error {
 			LEFT JOIN petugas ON absensi.mesin_id = petugas.id_user
 			LEFT JOIN peserta ON absensi.user_id = peserta.id
 			WHERE absensi.event_id = ? AND petugas.id_masjid = ?
-			AND DATE(absensi.jam) = DATE(?) GROUP BY absensi.user_id, peserta.fullname`
+			AND DATE(CONVERT_TZ(absensi.jam, '+00:00', '+07:00')) = DATE(?) GROUP BY absensi.user_id, peserta.fullname`
 		args = append(args, idEvent, idMasjid, tanggal)
 	case "2":
 		query = `
@@ -47,7 +47,7 @@ func GetRekapAbsen(c *fiber.Ctx) error {
 			LEFT JOIN petugas ON absensi.mesin_id = petugas.id_user
 			LEFT JOIN peserta ON absensi.user_id = peserta.id
 			WHERE absensi.event_id = ? AND petugas.id_masjid = ?
-			AND DATE(absensi.jam) = DATE(?) GROUP BY absensi.user_id, peserta.fullname`
+			AND DATE(CONVERT_TZ(absensi.jam, '+00:00', '+07:00')) = DATE(?) GROUP BY absensi.user_id, peserta.fullname`
 		args = append(args, idEvent, idMasjid, tanggal)
 	case "3":
 		jamMin := c.Query("jam_min") // Ambil jam_min dari query parameter
