@@ -8,6 +8,65 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+func GetNewRegistrantStatistics(c *fiber.Ctx) error {
+	// Ambil event_id dari query parameter
+	eventIDStr := c.Query("event_id")
+	eventID, err := strconv.Atoi(eventIDStr)
+	if err != nil || eventID == 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "event_id is required"})
+	}
+	eventDate := c.Query("event_date")
+
+	masjidStats := []map[string]interface{}{}
+	rows, err := database.DB.Query(`
+			SELECT 
+    m.id AS masjid_id, 
+    m.nama AS masjid_nama,
+    m.alamat,
+    COALESCE(COUNT(DISTINCT peserta.id), 0) AS total_count
+		FROM masjid m
+		LEFT JOIN peserta ON m.id = peserta.masjid_id
+				AND DATE(peserta.created_at) = DATE(?)
+		left JOIN setting on setting.id_masjid = m.id
+		where setting.id_event = ?
+		GROUP BY m.id, m.nama
+		ORDER BY total_count DESC
+	`, eventDate, eventID)
+
+	if err != nil {
+		log.Println("Error fetching masjid registrant statistics:", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch masjid registrant statistics"})
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var masjidID int
+		var masjidNama string
+		var masjidAlamat string
+		var totalCount int
+
+		if err := rows.Scan(&masjidID, &masjidNama, &masjidAlamat, &totalCount); err != nil {
+			log.Println("Error scanning masjid row:", err)
+			continue
+		}
+
+		masjidStats = append(masjidStats, map[string]interface{}{
+			"masjid_id":     masjidID,
+			"masjid_nama":   masjidNama,
+			"masjid_alamat": masjidAlamat,
+			"total_count":   totalCount,
+		})
+	}
+
+	// Return response JSON
+	return c.JSON(fiber.Map{
+		"event_id":     eventID,
+		"event_date":   eventDate,
+		"masjid_stats": masjidStats,
+	})
+
+}
+
 func GetEventStatistics(c *fiber.Ctx) error {
 	// Ambil event_id dari query parameter
 	eventIDStr := c.Query("event_id")
