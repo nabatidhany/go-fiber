@@ -53,7 +53,7 @@ func GetRekapAbsen(c *fiber.Ctx) error {
 		query = `
 			SELECT absensi.user_id, 
 						 COALESCE(peserta.fullname, '') AS fullname, 
-						 MIN(CONVERT_TZ(absensi.created_at, '+00:00', '+07:00')) AS jam, 
+						 MIN(absensi.created_at) AS jam, 
 						 peserta.isHideName
 			FROM absensi
 			LEFT JOIN petugas ON absensi.mesin_id = petugas.id_user
