@@ -40,15 +40,35 @@ func GetRekapAbsen(c *fiber.Ctx) error {
 			WHERE absensi.event_id = ? AND petugas.id_masjid = ?
 			AND DATE(CONVERT_TZ(absensi.jam, '+00:00', '+07:00')) = DATE(?) GROUP BY absensi.user_id, peserta.fullname`
 		args = append(args, idEvent, idMasjid, tanggal)
+		// case "2":
+		// 	query = `
+		// 		SELECT absensi.user_id, COALESCE(peserta.fullname, '') AS fullname, absensi.created_at AS jam, peserta.isHideName
+		// 		FROM absensi
+		// 		LEFT JOIN petugas ON absensi.mesin_id = petugas.id_user
+		// 		LEFT JOIN peserta ON absensi.user_id = peserta.id
+		// 		WHERE absensi.event_id = ? AND petugas.id_masjid = ?
+		// 		AND DATE(CONVERT_TZ(absensi.jam, '+00:00', '+07:00')) = DATE(?) GROUP BY absensi.user_id, peserta.fullname`
+		// 	args = append(args, idEvent, idMasjid, tanggal)
 	case "2":
 		query = `
-			SELECT absensi.user_id, COALESCE(peserta.fullname, '') AS fullname, absensi.created_at AS jam, peserta.isHideName
+			SELECT absensi.user_id, 
+						 COALESCE(peserta.fullname, '') AS fullname, 
+						 MIN(CONVERT_TZ(absensi.created_at, '+00:00', '+07:00')) AS jam, 
+						 peserta.isHideName
 			FROM absensi
 			LEFT JOIN petugas ON absensi.mesin_id = petugas.id_user
 			LEFT JOIN peserta ON absensi.user_id = peserta.id
-			WHERE absensi.event_id = ? AND petugas.id_masjid = ?
-			AND DATE(CONVERT_TZ(absensi.jam, '+00:00', '+07:00')) = DATE(?) GROUP BY absensi.user_id, peserta.fullname`
-		args = append(args, idEvent, idMasjid, tanggal)
+			WHERE absensi.event_id = ? 
+			AND petugas.id_masjid = ? 
+			AND (
+				CONVERT_TZ(absensi.created_at, '+00:00', '+07:00') 
+				BETWEEN CONCAT(?, ' 19:00:00') 
+				AND CONCAT(DATE_ADD(?, INTERVAL 1 DAY), ' 06:00:00')
+			)
+			GROUP BY absensi.user_id, peserta.fullname, peserta.isHideName
+			order by jam asc;
+		`
+		args = append(args, idEvent, idMasjid, tanggal, tanggal)
 	case "3":
 		jamMin := c.Query("jam_min") // Ambil jam_min dari query parameter
 		jamMax := c.Query("jam_max") // Ambil jam_max dari query parameter
