@@ -30,6 +30,86 @@ func GenerateRandomID() string {
 }
 
 // Handler untuk registrasi peserta
+// func RegisterPesertaItikaf(c *fiber.Ctx) error {
+// 	// Parse body JSON
+// 	var req RegisterPesertaRequest
+// 	if err := c.BodyParser(&req); err != nil {
+// 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request"})
+// 	}
+
+// 	// Validasi input
+// 	if err := utils.Validate.Struct(req); err != nil {
+// 		errors := utils.FormatValidationErrors(err)
+// 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"errors": errors})
+// 	}
+
+// 	// Konversi DOB ke format time.Time
+// 	dob, err := time.Parse("2006-01-02", req.Dob)
+// 	if err != nil {
+// 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid date format. Use YYYY-MM-DD"})
+// 	}
+
+// 	// Cek apakah nomor HP sudah terdaftar
+// 	var exists int
+// 	err = database.DB.QueryRow("SELECT COUNT(*) FROM peserta WHERE contact = ?", req.Contact).Scan(&exists)
+// 	if err != nil {
+// 		return c.Status(500).JSON(fiber.Map{"error": "Database error"})
+// 	}
+// 	if exists > 0 {
+// 		return c.Status(400).JSON(fiber.Map{"error": "Nomor HP sudah terdaftar"})
+// 	}
+
+// 	// Gunakan QR Code dari request jika diberikan, atau generate yang baru
+// 	qrCode := req.QRCode
+// 	if qrCode == "" {
+// 		qrCode = GenerateRandomID()
+// 	} else {
+// 		// Periksa apakah QR Code sudah ada di database
+// 		var qrExists int
+// 		err = database.DB.QueryRow("SELECT COUNT(*) FROM peserta WHERE qr_code = ?", qrCode).Scan(&qrExists)
+// 		if err != nil {
+// 			return c.Status(500).JSON(fiber.Map{"error": "Database error"})
+// 		}
+// 		if qrExists > 0 {
+// 			return c.Status(400).JSON(fiber.Map{"error": "QR Code sudah digunakan"})
+// 		}
+// 	}
+
+// 	// Gunakan Event ID dari request jika diberikan, atau gunakan default 2
+// 	eventID := req.EventID
+// 	if eventID == 0 {
+// 		eventID = 2
+// 	}
+
+// 	// Insert ke `peserta`
+// 	result, err := database.DB.Exec("INSERT INTO peserta (fullname, contact, gender, dob, masjid_id, isHideName, qr_code, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+// 		req.FullName, req.Contact, req.Gender, dob, req.MasjidID, req.IsHideName, qrCode, 1)
+// 	if err != nil {
+// 		return c.Status(500).JSON(fiber.Map{"error": "Failed to insert peserta"})
+// 	}
+
+// 	// Ambil ID peserta yang baru saja dibuat
+// 	idPeserta, err := result.LastInsertId()
+// 	if err != nil {
+// 		return c.Status(500).JSON(fiber.Map{"error": "Failed to retrieve peserta ID"})
+// 	}
+
+// 	// Insert ke `detail_peserta`
+// 	_, err = database.DB.Exec("INSERT INTO detail_peserta (id_peserta, id_event, status) VALUES (?, ?, ?)", idPeserta, eventID, 1)
+// 	if err != nil {
+// 		return c.Status(500).JSON(fiber.Map{"error": "Failed to insert detail peserta"})
+// 	}
+
+// 	// return c.Status(http.StatusCreated).JSON(fiber.Map{"message": "Peserta registered successfully"})
+// 	return c.Status(http.StatusCreated).JSON(fiber.Map{
+// 		"message":    "Peserta registered successfully",
+// 		"qr_code":    qrCode,
+// 		"is_peserta": idPeserta,
+// 	})
+// }
+
+// Handler untuk registrasi peserta
+// Handler untuk registrasi peserta
 func RegisterPesertaItikaf(c *fiber.Ctx) error {
 	// Parse body JSON
 	var req RegisterPesertaRequest
@@ -50,29 +130,32 @@ func RegisterPesertaItikaf(c *fiber.Ctx) error {
 	}
 
 	// Cek apakah nomor HP sudah terdaftar
-	var exists int
-	err = database.DB.QueryRow("SELECT COUNT(*) FROM peserta WHERE contact = ?", req.Contact).Scan(&exists)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Database error"})
-	}
-	if exists > 0 {
-		return c.Status(400).JSON(fiber.Map{"error": "Nomor HP sudah terdaftar"})
+	var idPeserta int64
+	var qrCode string
+	err = database.DB.QueryRow("SELECT id, qr_code FROM peserta WHERE contact = ?", req.Contact).Scan(&idPeserta, &qrCode)
+	if err == nil {
+		// Jika peserta sudah terdaftar, kembalikan response sukses dengan QR Code dari database
+		return c.Status(http.StatusCreated).JSON(fiber.Map{
+			"message":    "Peserta has been registered",
+			"qr_code":    qrCode,
+			"is_peserta": idPeserta,
+		})
 	}
 
 	// Gunakan QR Code dari request jika diberikan, atau generate yang baru
-	qrCode := req.QRCode
-	if qrCode == "" {
+	if req.QRCode == "" {
 		qrCode = GenerateRandomID()
 	} else {
 		// Periksa apakah QR Code sudah ada di database
 		var qrExists int
-		err = database.DB.QueryRow("SELECT COUNT(*) FROM peserta WHERE qr_code = ?", qrCode).Scan(&qrExists)
+		err = database.DB.QueryRow("SELECT COUNT(*) FROM peserta WHERE qr_code = ?", req.QRCode).Scan(&qrExists)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": "Database error"})
 		}
 		if qrExists > 0 {
 			return c.Status(400).JSON(fiber.Map{"error": "QR Code sudah digunakan"})
 		}
+		qrCode = req.QRCode
 	}
 
 	// Gunakan Event ID dari request jika diberikan, atau gunakan default 2
@@ -89,7 +172,7 @@ func RegisterPesertaItikaf(c *fiber.Ctx) error {
 	}
 
 	// Ambil ID peserta yang baru saja dibuat
-	idPeserta, err := result.LastInsertId()
+	idPeserta, err = result.LastInsertId()
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to retrieve peserta ID"})
 	}
@@ -100,7 +183,6 @@ func RegisterPesertaItikaf(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to insert detail peserta"})
 	}
 
-	// return c.Status(http.StatusCreated).JSON(fiber.Map{"message": "Peserta registered successfully"})
 	return c.Status(http.StatusCreated).JSON(fiber.Map{
 		"message":    "Peserta registered successfully",
 		"qr_code":    qrCode,
