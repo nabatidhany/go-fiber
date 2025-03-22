@@ -1,10 +1,12 @@
 package controllers
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"shollu/database"
 	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -277,21 +279,27 @@ func GetEventStatistics(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "event_id is required"})
 	}
 
+	// Ambil event_date dari query parameter, default ke hari ini jika tidak dikirim
+	eventDate := c.Query("event_date")
+	if eventDate == "" {
+		eventDate = time.Now().Format("2006-01-02") // Format YYYY-MM-DD
+	}
+
 	// Menentukan rentang waktu berdasarkan event_id
 	var timeCondition string
 	if eventID == 2 {
-		// Rentang waktu dari jam 19:00 hari ini sampai 04:50 esok hari
+		// Rentang waktu dari jam 19:00 event_date sampai 06:00 event_date +1
 		timeCondition = `
 			(
 				CONVERT_TZ(absensi.created_at, '+00:00', '+07:00') 
-				BETWEEN CONCAT(CURDATE(), ' 19:00:00') 
-				AND CONCAT(DATE_ADD(CURDATE(), INTERVAL 1 DAY), ' 06:00:00')
+				BETWEEN CONCAT(?, ' 19:00:00') 
+				AND CONCAT(DATE_ADD(?, INTERVAL 1 DAY), ' 06:00:00')
 			)
 		`
 	} else {
 		// Rentang waktu berdasarkan tanggal normal
 		timeCondition = `
-			DATE(CONVERT_TZ(created_at, '+00:00', '+07:00')) = DATE(CONVERT_TZ(NOW(), '+00:00', '+07:00'))
+			DATE(CONVERT_TZ(absensi.created_at, '+00:00', '+07:00')) = DATE(?)
 		`
 	}
 
@@ -325,7 +333,12 @@ func GetEventStatistics(c *fiber.Ctx) error {
 	var totalPeserta, totalAbsen, totalMale, totalFemale int
 	var persenHadir float64
 
-	err = database.DB.QueryRow(query, eventID, eventID, eventID, eventID).Scan(&totalPeserta, &totalAbsen, &totalMale, &totalFemale, &persenHadir)
+	if eventID == 2 {
+		err = database.DB.QueryRow(query, eventID, eventID, eventDate, eventDate, eventID, eventID).Scan(&totalPeserta, &totalAbsen, &totalMale, &totalFemale, &persenHadir)
+	} else {
+		err = database.DB.QueryRow(query, eventID, eventID, eventDate, eventID, eventID).Scan(&totalPeserta, &totalAbsen, &totalMale, &totalFemale, &persenHadir)
+	}
+
 	if err != nil {
 		log.Println("Error fetching event statistics:", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch event statistics"})
@@ -347,18 +360,20 @@ func GetEventStatistics(c *fiber.Ctx) error {
 		LEFT JOIN petugas p ON p.id_masjid = m.id
 		LEFT JOIN absensi ON p.id_user = absensi.mesin_id
 			AND absensi.event_id = ?
-			AND (
-				CONVERT_TZ(absensi.created_at, '+00:00', '+07:00') 
-				BETWEEN CONCAT(CURDATE(), ' 19:00:00') 
-				AND CONCAT(DATE_ADD(CURDATE(), INTERVAL 1 DAY), ' 06:00:00')
-			)
+			AND %s
 		LEFT JOIN peserta ON absensi.user_id = peserta.id
 		WHERE setting.id_event = ?
 		GROUP BY m.id, m.nama, m.alamat, regional.nama
 		ORDER BY total_count DESC;
-	`)
+	`, timeCondition)
 
-	rows, err := database.DB.Query(masjidQuery, eventID, eventID)
+	var rows *sql.Rows
+	if eventID == 2 {
+		rows, err = database.DB.Query(masjidQuery, eventID, eventDate, eventDate, eventID)
+	} else {
+		rows, err = database.DB.Query(masjidQuery, eventID, eventDate, eventID)
+	}
+
 	if err != nil {
 		log.Println("Error fetching masjid attendance statistics:", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch masjid attendance statistics"})
@@ -388,6 +403,7 @@ func GetEventStatistics(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"event_id":      eventID,
+		"event_date":    eventDate,
 		"total_peserta": totalPeserta,
 		"total_absen":   totalAbsen,
 		"total_male":    totalMale,
