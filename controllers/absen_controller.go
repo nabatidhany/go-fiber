@@ -173,7 +173,7 @@ func SaveAbsenQR(c *fiber.Ctx) error {
 		}
 
 		if tag == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "Absensi hanya diperbolehkan dalam rentang 30 menit sebelum dan sesudah waktu sholat"})
+			return c.Status(200).JSON(fiber.Map{"error": "Absensi hanya diperbolehkan dalam rentang 30 menit sebelum dan sesudah waktu sholat"})
 		}
 	}
 
