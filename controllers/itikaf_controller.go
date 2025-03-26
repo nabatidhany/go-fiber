@@ -108,7 +108,7 @@ func GetRekapAbsen(c *fiber.Ctx) error {
 			LEFT JOIN peserta ON absensi.user_id = peserta.id
 			WHERE absensi.event_id = ? AND petugas.id_masjid = ?
 			AND DATE(CONVERT_TZ(absensi.created_at, '+00:00', '+07:00')) = DATE(?)
-			AND TIME(CONVERT_TZ(absensi.created_at, '+00:00', '+07:00')) BETWEEN ? AND ? GROUP BY absensi.user_id, peserta.fullname`
+			AND TIME(absensi.created_at) BETWEEN ? AND ? GROUP BY absensi.user_id, peserta.fullname`
 		args = append(args, idEvent, idMasjid, tanggal, jamMin, jamMax)
 	default:
 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid event_id"})
