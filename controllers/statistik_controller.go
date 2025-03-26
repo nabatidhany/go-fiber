@@ -299,7 +299,7 @@ func GetEventStatistics(c *fiber.Ctx) error {
 	} else {
 		// Rentang waktu berdasarkan tanggal normal
 		timeCondition = `
-			DATE(CONVERT_TZ(absensi.created_at, '+00:00', '+07:00')) = DATE(?)
+			DATE(absensi.created_at) = DATE(?)
 		`
 	}
 
