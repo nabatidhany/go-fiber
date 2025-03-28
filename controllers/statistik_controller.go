@@ -412,3 +412,70 @@ func GetEventStatistics(c *fiber.Ctx) error {
 		"masjid_stats":  masjidStats,
 	})
 }
+
+func GetAttendanceStatistics(c *fiber.Ctx) error {
+	startDate := "2025-03-20"
+	endDate := "2025-03-29"
+	eventID := 2
+
+	query := `
+		SELECT
+			dates.date AS event_date,
+			COALESCE(
+				(
+					(SELECT COUNT(DISTINCT user_id) FROM absensi
+					 WHERE event_id = ? AND 
+					 CONVERT_TZ(absensi.created_at, '+00:00', '+07:00') 
+					 BETWEEN CONCAT(dates.date, ' 19:00:00') 
+					 AND CONCAT(DATE_ADD(dates.date, INTERVAL 1 DAY), ' 06:00:00'))
+					/
+					NULLIF((SELECT COUNT(*) FROM peserta
+					LEFT JOIN detail_peserta ON peserta.id = detail_peserta.id_peserta
+					WHERE detail_peserta.id_event = ?), 0) * 100
+				), 0) AS persen_hadir,
+			COALESCE((SELECT COUNT(*) FROM peserta
+				LEFT JOIN detail_peserta ON peserta.id = detail_peserta.id_peserta
+				WHERE detail_peserta.id_event = ?), 0) AS total_peserta,
+			COALESCE((SELECT COUNT(DISTINCT user_id) FROM absensi
+				 WHERE event_id = ? AND 
+				 CONVERT_TZ(absensi.created_at, '+00:00', '+07:00') 
+				 BETWEEN CONCAT(dates.date, ' 19:00:00') 
+				 AND CONCAT(DATE_ADD(dates.date, INTERVAL 1 DAY), ' 06:00:00')), 0) AS total_hadir
+		FROM (
+			SELECT DATE_ADD(?, INTERVAL seq DAY) AS date
+			FROM (SELECT 0 AS seq UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+			      UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9
+			      UNION ALL SELECT 10 UNION ALL SELECT 11 UNION ALL SELECT 12 UNION ALL SELECT 13 UNION ALL SELECT 14
+			      UNION ALL SELECT 15 UNION ALL SELECT 16 UNION ALL SELECT 17 UNION ALL SELECT 18 UNION ALL SELECT 19) AS seq
+			WHERE DATE_ADD(?, INTERVAL seq DAY) <= ? COLLATE utf8mb4_unicode_ci
+		) AS dates;
+	`
+
+	rows, err := database.DB.Query(query, eventID, eventID, eventID, eventID, startDate, startDate, endDate)
+	if err != nil {
+		log.Println("Error fetching attendance statistics:", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch attendance statistics"})
+	}
+	defer rows.Close()
+
+	attendanceStats := []map[string]interface{}{}
+
+	for rows.Next() {
+		var eventDate string
+		var persenHadir float64
+		var totalPeserta int
+		var totalHadir int
+		if err := rows.Scan(&eventDate, &persenHadir, &totalPeserta, &totalHadir); err != nil {
+			log.Println("Error scanning row:", err)
+			continue
+		}
+		attendanceStats = append(attendanceStats, map[string]interface{}{
+			"date":          eventDate,
+			"persen_hadir":  persenHadir,
+			"total_peserta": totalPeserta,
+			"total_hadir":   totalHadir,
+		})
+	}
+
+	return c.JSON(attendanceStats)
+}
