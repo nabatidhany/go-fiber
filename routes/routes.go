@@ -31,6 +31,9 @@ func SetupRoutes(app *fiber.App) {
 
 	apiV1 := app.Group("/api/v1")
 	apiV1.Post("/absent-qr", ApiKeyMiddleware, controllers.SaveAbsenQR)
+	apiV1.Post("/collections-create", controllers.CreateCollection)
+	apiV1.Get("/collections-get-absensi/:slug", controllers.ViewCollection)
+	apiV1.Get("/collections-get-meta/:slug", controllers.GetCollectionsMeta)
 
 	user := api.Group("/users", middlewares.JWTMiddleware())
 	user.Get("/profile", controllers.GetProfile)
