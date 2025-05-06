@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"shollu/database"
 	"shollu/utils"
+	"sort"
 	"strings"
 	"time"
 
@@ -280,30 +281,78 @@ func ViewCollection(c *fiber.Ctx) error {
 	}
 
 	// Bangun response
-	var result []map[string]interface{}
+	// var result []map[string]interface{}
+	// for userID, fullname := range pesertaMap {
+	// 	userAbsen := make(map[string]map[string]string)
+	// 	for _, date := range dates {
+	// 		userAbsen[date] = make(map[string]string)
+	// 		for _, tag := range sholatTags {
+	// 			if absensiMap[userID][date][tag] {
+	// 				userAbsen[date][tag] = "Y"
+	// 			} else {
+	// 				userAbsen[date][tag] = "N"
+	// 			}
+	// 		}
+	// 	}
+	// 	result = append(result, map[string]interface{}{
+	// 		"fullname": fullname,
+	// 		"absen":    userAbsen,
+	// 	})
+	// }
+
+	// Bangun response + hitung total 'Y' tiap peserta
+	type pesertaData struct {
+		Fullname string
+		Absen    map[string]map[string]string
+		TotalY   int
+	}
+
+	var result []pesertaData
+
 	for userID, fullname := range pesertaMap {
 		userAbsen := make(map[string]map[string]string)
+		totalY := 0
+
 		for _, date := range dates {
 			userAbsen[date] = make(map[string]string)
 			for _, tag := range sholatTags {
 				if absensiMap[userID][date][tag] {
 					userAbsen[date][tag] = "Y"
+					totalY++
 				} else {
 					userAbsen[date][tag] = "N"
 				}
 			}
 		}
-		result = append(result, map[string]interface{}{
-			"fullname": fullname,
-			"absen":    userAbsen,
+
+		result = append(result, pesertaData{
+			Fullname: fullname,
+			Absen:    userAbsen,
+			TotalY:   totalY,
+		})
+	}
+
+	// Urutkan dari totalY terbanyak ke terkecil
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].TotalY > result[j].TotalY
+	})
+
+	// Ubah ke []map[string]interface{} untuk response JSON
+	var responseData []map[string]interface{}
+	for _, r := range result {
+		responseData = append(responseData, map[string]interface{}{
+			"fullname": r.Fullname,
+			"absen":    r.Absen,
+			"total":    r.TotalY,
 		})
 	}
 
 	return c.JSON(fiber.Map{
 		"sholat_tracked": sholatTags,
 		"dates":          dates,
-		"data":           result,
+		"data":           responseData,
 	})
+
 }
 
 func GetCollectionsMeta(c *fiber.Ctx) error {
