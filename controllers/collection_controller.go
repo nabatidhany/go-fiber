@@ -410,12 +410,13 @@ func GetCollectionsMetaDetail(c *fiber.Ctx) error {
 	row := database.DB.QueryRow(query, slug)
 
 	type CollectionMeta struct {
-		ID        int64  `json:"id"`
-		Name      string `json:"name"`
-		Slug      string `json:"slug"`
-		DateStart string `json:"date_start"`
-		DateEnd   string `json:"date_end"`
-		MasjidID  string `json:"masjid_id"`
+		ID          int64    `json:"id"`
+		Name        string   `json:"name"`
+		Slug        string   `json:"slug"`
+		DateStart   string   `json:"date_start"`
+		DateEnd     string   `json:"date_end"`
+		MasjidID    string   `json:"masjid_id"`
+		MasjidNames []string `json:"masjid_names"`
 	}
 
 	var result CollectionMeta
@@ -426,10 +427,68 @@ func GetCollectionsMetaDetail(c *fiber.Ctx) error {
 		})
 	}
 
+	// Ambil nama masjid
+	var masjidQuery string
+	if result.MasjidID == "all" {
+		masjidQuery = `SELECT nama FROM masjid`
+	} else {
+		ids := strings.Split(result.MasjidID, ",")
+		for i := range ids {
+			ids[i] = strings.TrimSpace(ids[i])
+		}
+		inClause := "'" + strings.Join(ids, "','") + "'"
+		masjidQuery = fmt.Sprintf(`SELECT nama FROM masjid WHERE id IN (%s)`, inClause)
+	}
+
+	rows, err := database.DB.Query(masjidQuery)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to get masjid names",
+		})
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var nama string
+		rows.Scan(&nama)
+		result.MasjidNames = append(result.MasjidNames, nama)
+	}
+
 	return c.JSON(fiber.Map{
 		"collections": result,
 	})
 }
+
+// func GetCollectionsMetaDetail(c *fiber.Ctx) error {
+// 	slug := c.Params("slug")
+// 	query := `
+// 		SELECT id, name, slug, date_start, date_end, masjid_id
+// 		FROM collections WHERE slug = ?
+// 	`
+
+// 	row := database.DB.QueryRow(query, slug)
+
+// 	type CollectionMeta struct {
+// 		ID        int64  `json:"id"`
+// 		Name      string `json:"name"`
+// 		Slug      string `json:"slug"`
+// 		DateStart string `json:"date_start"`
+// 		DateEnd   string `json:"date_end"`
+// 		MasjidID  string `json:"masjid_id"`
+// 	}
+
+// 	var result CollectionMeta
+// 	err := row.Scan(&result.ID, &result.Name, &result.Slug, &result.DateStart, &result.DateEnd, &result.MasjidID)
+// 	if err != nil {
+// 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+// 			"error": "Collection not found",
+// 		})
+// 	}
+
+// 	return c.JSON(fiber.Map{
+// 		"collections": result,
+// 	})
+// }
 
 // func ViewCollection(c *fiber.Ctx) error {
 // 	slug := c.Params("slug")
