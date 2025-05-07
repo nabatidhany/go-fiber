@@ -229,12 +229,12 @@ func ViewCollection(c *fiber.Ctx) error {
 	var absenQuery string
 	if collection.MasjidID == "all" {
 		absenQuery = fmt.Sprintf(`
-			SELECT a.user_id, DATE(a.created_at) as tanggal, a.tag
+			SELECT a.user_id, DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) as tanggal, a.tag
 			FROM absensi a
 			JOIN petugas p ON a.mesin_id = p.id_user
 			WHERE a.tag IN (%s)
 			  AND a.user_id IN (%s)
-			  AND DATE(a.created_at) BETWEEN '%s' AND '%s'
+			  AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) BETWEEN '%s' AND '%s'
 		`, inTags, inPeserta, dateFromStr, dateToStr)
 	} else {
 		masjidIDs := strings.Split(collection.MasjidID, ",")
@@ -244,13 +244,13 @@ func ViewCollection(c *fiber.Ctx) error {
 		inMasjid := strings.Join(masjidIDs, ",")
 
 		absenQuery = fmt.Sprintf(`
-			SELECT a.user_id, DATE(a.created_at) as tanggal, a.tag
+			SELECT a.user_id, DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) as tanggal, a.tag
 			FROM absensi a
 			JOIN petugas p ON a.mesin_id = p.id_user
 			WHERE p.id_masjid IN (%s)
 			  AND a.tag IN (%s)
 			  AND a.user_id IN (%s)
-			  AND DATE(a.created_at) BETWEEN '%s' AND '%s'
+			  AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) BETWEEN '%s' AND '%s'
 		`, inMasjid, inTags, inPeserta, dateFromStr, dateToStr)
 	}
 
@@ -595,13 +595,13 @@ func GetCollectionsMetaDetail(c *fiber.Ctx) error {
 
 // 	// Query absensi
 // 	absenQuery := fmt.Sprintf(`
-//         SELECT a.user_id, DATE(a.created_at) as tanggal, a.tag
+//         SELECT a.user_id, DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) as tanggal, a.tag
 //         FROM absensi a
 //         JOIN petugas p ON a.mesin_id = p.id_user
 //         WHERE p.id_masjid IN (%s)
 //           AND a.tag IN (%s)
 //           AND a.user_id IN (%s)
-//           AND DATE(a.created_at) BETWEEN '%s' AND '%s'
+//           AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) BETWEEN '%s' AND '%s'
 //     `, inMasjid, inTags, inPeserta, dateFromStr, dateToStr)
 
 // 	absenRows, err := database.DB.Query(absenQuery)
