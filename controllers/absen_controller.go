@@ -169,9 +169,40 @@ func SaveAbsenQR(c *fiber.Ctx) error {
 			"isya":    true,
 		}
 
+		// Ambil konfigurasi rentang waktu dari database
+		configs := make(map[string]struct {
+			Before time.Duration
+			After  time.Duration
+		})
+
+		rows, err := database.DB.Query("SELECT nama_sholat, sebelum_menit, sesudah_menit FROM sholat_config")
+		if err != nil {
+			log.Println("Failed to fetch sholat configs:", err)
+			return c.Status(500).JSON(fiber.Map{"error": "Database error while fetching sholat configs"})
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var name string
+			var before, after int
+			if err := rows.Scan(&name, &before, &after); err != nil {
+				continue
+			}
+			configs[strings.ToLower(name)] = struct {
+				Before time.Duration
+				After  time.Duration
+			}{
+				Before: time.Duration(before) * time.Minute,
+				After:  time.Duration(after) * time.Minute,
+			}
+		}
+
 		for prayer, prayerTime := range result.Data.Jadwal {
 			lowerPrayer := strings.ToLower(prayer)
-
+			conf, ok := configs[lowerPrayer]
+			if !ok {
+				continue // skip jika tidak ada config-nya
+			}
 			// Hanya proses jadwal sholat yang valid
 			if !validPrayers[lowerPrayer] {
 				continue
@@ -183,8 +214,11 @@ func SaveAbsenQR(c *fiber.Ctx) error {
 				continue
 			}
 
-			startTime := prayerDateTime.Add(-30 * time.Minute)
-			endTime := prayerDateTime.Add(30 * time.Minute)
+			// startTime := prayerDateTime.Add(-30 * time.Minute)
+			// endTime := prayerDateTime.Add(30 * time.Minute)
+
+			startTime := prayerDateTime.Add(-conf.Before)
+			endTime := prayerDateTime.Add(conf.After)
 
 			if currentTime.After(startTime) && currentTime.Before(endTime) {
 				tag = lowerPrayer
