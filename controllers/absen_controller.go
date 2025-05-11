@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"shollu/database"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -159,21 +160,53 @@ func SaveAbsenQR(c *fiber.Ctx) error {
 		loc, _ := time.LoadLocation("Asia/Jakarta")
 		currentTime := time.Now().In(loc)
 
+		// Daftar jadwal sholat yang diperbolehkan
+		validPrayers := map[string]bool{
+			"subuh":   true,
+			"dzuhur":  true,
+			"ashar":   true,
+			"maghrib": true,
+			"isya":    true,
+		}
+
 		for prayer, prayerTime := range result.Data.Jadwal {
-			// Gabungkan dengan tanggal hari ini sebelum parsing
-			prayerDateTime, _ := time.ParseInLocation("2006-01-02 15:04", date+" "+prayerTime, loc)
+			lowerPrayer := strings.ToLower(prayer)
+
+			// Hanya proses jadwal sholat yang valid
+			if !validPrayers[lowerPrayer] {
+				continue
+			}
+
+			prayerDateTime, err := time.ParseInLocation("2006-01-02 15:04", date+" "+prayerTime, loc)
+			if err != nil {
+				log.Println("Failed to parse prayer time:", prayer, prayerTime)
+				continue
+			}
 
 			startTime := prayerDateTime.Add(-30 * time.Minute)
 			endTime := prayerDateTime.Add(30 * time.Minute)
 
 			if currentTime.After(startTime) && currentTime.Before(endTime) {
-				tag = prayer
+				tag = lowerPrayer
 				break
 			}
 		}
 
+		// for prayer, prayerTime := range result.Data.Jadwal {
+		// 	// Gabungkan dengan tanggal hari ini sebelum parsing
+		// 	prayerDateTime, _ := time.ParseInLocation("2006-01-02 15:04", date+" "+prayerTime, loc)
+
+		// 	startTime := prayerDateTime.Add(-30 * time.Minute)
+		// 	endTime := prayerDateTime.Add(30 * time.Minute)
+
+		// 	if currentTime.After(startTime) && currentTime.Before(endTime) {
+		// 		tag = prayer
+		// 		break
+		// 	}
+		// }
+
 		if tag == "" {
-			return c.Status(200).JSON(fiber.Map{"error": "Absensi hanya diperbolehkan dalam rentang 30 menit sebelum dan sesudah waktu sholat"})
+			return c.Status(400).JSON(fiber.Map{"error": "Absensi hanya diperbolehkan dalam rentang 30 menit sebelum dan sesudah waktu sholat"})
 		}
 	}
 
