@@ -355,6 +355,51 @@ func ViewCollection(c *fiber.Ctx) error {
 
 }
 
+// func GetCollectionsMeta(c *fiber.Ctx) error {
+// 	search := c.Query("search", "") // opsional pencarian nama
+
+// 	query := `
+// 		SELECT id, name, slug, date_start, date_end
+// 		FROM collections
+// 	`
+// 	var args []interface{}
+
+// 	if search != "" {
+// 		query += " WHERE name LIKE ?"
+// 		args = append(args, "%"+search+"%")
+// 	}
+
+// 	rows, err := database.DB.Query(query, args...)
+// 	if err != nil {
+// 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+// 			"error": "Failed to retrieve collections",
+// 		})
+// 	}
+// 	defer rows.Close()
+
+// 	type CollectionMeta struct {
+// 		ID        int64  `json:"id"`
+// 		Name      string `json:"name"`
+// 		Slug      string `json:"slug"`
+// 		DateStart string `json:"date_start"`
+// 		DateEnd   string `json:"date_end"`
+// 	}
+
+// 	var result []CollectionMeta
+// 	for rows.Next() {
+// 		var col CollectionMeta
+// 		err := rows.Scan(&col.ID, &col.Name, &col.Slug, &col.DateStart, &col.DateEnd)
+// 		if err != nil {
+// 			continue // skip error rows
+// 		}
+// 		result = append(result, col)
+// 	}
+
+// 	return c.JSON(fiber.Map{
+// 		"collections": result,
+// 	})
+// }
+
 func GetCollectionsMeta(c *fiber.Ctx) error {
 	search := c.Query("search", "") // opsional pencarian nama
 
@@ -378,11 +423,12 @@ func GetCollectionsMeta(c *fiber.Ctx) error {
 	defer rows.Close()
 
 	type CollectionMeta struct {
-		ID        int64  `json:"id"`
-		Name      string `json:"name"`
-		Slug      string `json:"slug"`
-		DateStart string `json:"date_start"`
-		DateEnd   string `json:"date_end"`
+		ID        int64            `json:"id"`
+		Name      string           `json:"name"`
+		Slug      string           `json:"slug"`
+		DateStart string           `json:"date_start"`
+		DateEnd   string           `json:"date_end"`
+		Summary   map[string]int64 `json:"summary"`
 	}
 
 	var result []CollectionMeta
@@ -392,6 +438,27 @@ func GetCollectionsMeta(c *fiber.Ctx) error {
 		if err != nil {
 			continue // skip error rows
 		}
+
+		// Ambil summary per tag dari tabel absensis
+		summary := make(map[string]int64)
+		summaryRows, err := database.DB.Query(`
+			SELECT tag, COUNT(*) 
+			FROM absensis 
+			WHERE collection_id = ? 
+			GROUP BY tag
+		`, col.ID)
+		if err == nil {
+			defer summaryRows.Close()
+			for summaryRows.Next() {
+				var tag string
+				var count int64
+				if err := summaryRows.Scan(&tag, &count); err == nil {
+					summary[tag] = count
+				}
+			}
+		}
+
+		col.Summary = summary
 		result = append(result, col)
 	}
 
