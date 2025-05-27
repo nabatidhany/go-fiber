@@ -355,48 +355,161 @@ func ViewCollection(c *fiber.Ctx) error {
 
 }
 
+// func GetCollectionsMeta(c *fiber.Ctx) error {
+// 	search := c.Query("search", "") // opsional pencarian nama
+
+// 	query := `
+// 		SELECT id, name, slug, date_start, date_end
+// 		FROM collections
+// 	`
+// 	var args []interface{}
+
+// 	if search != "" {
+// 		query += " WHERE name LIKE ?"
+// 		args = append(args, "%"+search+"%")
+// 	}
+
+// 	rows, err := database.DB.Query(query, args...)
+// 	if err != nil {
+// 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+// 			"error": "Failed to retrieve collections",
+// 		})
+// 	}
+// 	defer rows.Close()
+
+// 	type CollectionMeta struct {
+// 		ID        int64  `json:"id"`
+// 		Name      string `json:"name"`
+// 		Slug      string `json:"slug"`
+// 		DateStart string `json:"date_start"`
+// 		DateEnd   string `json:"date_end"`
+// 	}
+
+// 	var result []CollectionMeta
+// 	for rows.Next() {
+// 		var col CollectionMeta
+// 		err := rows.Scan(&col.ID, &col.Name, &col.Slug, &col.DateStart, &col.DateEnd)
+// 		if err != nil {
+// 			continue // skip error rows
+// 		}
+// 		result = append(result, col)
+// 	}
+
+// 	return c.JSON(fiber.Map{
+// 		"collections": result,
+// 	})
+// }
+
 func GetCollectionsMeta(c *fiber.Ctx) error {
-	search := c.Query("search", "") // opsional pencarian nama
-
-	query := `
-		SELECT id, name, slug, date_start, date_end
-		FROM collections
-	`
-	var args []interface{}
-
-	if search != "" {
-		query += " WHERE name LIKE ?"
-		args = append(args, "%"+search+"%")
-	}
-
-	rows, err := database.DB.Query(query, args...)
+	rows, err := database.DB.Query(`
+		SELECT id, name, slug, tracking_code, date_start, date_end, masjid_id
+		FROM collections ORDER BY create_time DESC
+	`)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to retrieve collections",
-		})
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch collections"})
 	}
 	defer rows.Close()
 
-	type CollectionMeta struct {
-		ID        int64  `json:"id"`
-		Name      string `json:"name"`
-		Slug      string `json:"slug"`
-		DateStart string `json:"date_start"`
-		DateEnd   string `json:"date_end"`
+	sholatMap := map[string]string{
+		"1": "subuh",
+		"2": "dzuhur",
+		"3": "ashar",
+		"4": "maghrib",
+		"5": "isya",
 	}
 
-	var result []CollectionMeta
+	var collections []map[string]interface{}
+
 	for rows.Next() {
-		var col CollectionMeta
-		err := rows.Scan(&col.ID, &col.Name, &col.Slug, &col.DateStart, &col.DateEnd)
-		if err != nil {
-			continue // skip error rows
+		var id int
+		var name, slug, trackingCode, dateStart, dateEnd, masjidID string
+		if err := rows.Scan(&id, &name, &slug, &trackingCode, &dateStart, &dateEnd, &masjidID); err != nil {
+			continue
 		}
-		result = append(result, col)
+
+		// Get peserta IDs
+		pesertaRows, err := database.DB.Query(`SELECT id_peserta FROM collection_items WHERE collection_id = ?`, id)
+		if err != nil {
+			continue
+		}
+
+		var pesertaIDs []string
+		for pesertaRows.Next() {
+			var pid int
+			pesertaRows.Scan(&pid)
+			pesertaIDs = append(pesertaIDs, fmt.Sprintf("%d", pid))
+		}
+		pesertaRows.Close()
+		if len(pesertaIDs) == 0 {
+			continue
+		}
+
+		inPeserta := strings.Join(pesertaIDs, ",")
+		trackedSholat := strings.Split(trackingCode, ",")
+		var sholatTags []string
+		for _, code := range trackedSholat {
+			if tag, ok := sholatMap[code]; ok {
+				sholatTags = append(sholatTags, tag)
+			}
+		}
+		inTags := "'" + strings.Join(sholatTags, "','") + "'"
+
+		// Build absensi query
+		var absenQuery string
+		if masjidID == "all" {
+			absenQuery = fmt.Sprintf(`
+				SELECT a.tag, COUNT(*) as total
+				FROM absensi a
+				JOIN petugas p ON a.mesin_id = p.id_user
+				WHERE a.user_id IN (%s) AND a.tag IN (%s)
+				AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) BETWEEN '%s' AND '%s'
+				GROUP BY a.tag
+			`, inPeserta, inTags, dateStart, dateEnd)
+		} else {
+			masjidIDs := strings.Split(masjidID, ",")
+			for i := range masjidIDs {
+				masjidIDs[i] = strings.TrimSpace(masjidIDs[i])
+			}
+			inMasjid := strings.Join(masjidIDs, ",")
+			absenQuery = fmt.Sprintf(`
+				SELECT a.tag, COUNT(*) as total
+				FROM absensi a
+				JOIN petugas p ON a.mesin_id = p.id_user
+				WHERE p.id_masjid IN (%s)
+				AND a.user_id IN (%s)
+				AND a.tag IN (%s)
+				AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) BETWEEN '%s' AND '%s'
+				GROUP BY a.tag
+			`, inMasjid, inPeserta, inTags, dateStart, dateEnd)
+		}
+
+		// Execute absensi summary query
+		summaryRows, err := database.DB.Query(absenQuery)
+		if err != nil {
+			continue
+		}
+
+		summaries := make(map[string]int)
+		for summaryRows.Next() {
+			var tag string
+			var total int
+			summaryRows.Scan(&tag, &total)
+			summaries[tag] = total
+		}
+		summaryRows.Close()
+
+		collections = append(collections, fiber.Map{
+			"id":         id,
+			"name":       name,
+			"slug":       slug,
+			"start_date": dateStart,
+			"end_date":   dateEnd,
+			"summaries":  summaries,
+		})
 	}
 
 	return c.JSON(fiber.Map{
-		"collections": result,
+		"collections": collections,
 	})
 }
 
