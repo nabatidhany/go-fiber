@@ -143,3 +143,100 @@ func GetRekapAbsen(c *fiber.Ctx) error {
 		"data":    rekapList,
 	})
 }
+
+func GetRekapSholat(c *fiber.Ctx) error {
+	idMasjid := c.Params("id_masjid")
+	idEvent := "3" // fix untuk event 3
+	tanggal := c.Query("tanggal")
+	if tanggal == "" {
+		tanggal = time.Now().Format("2006-01-02")
+	}
+
+	// Ambil semua absensi di tanggal itu (event_id = 3)
+	query := `
+		SELECT
+			peserta.id,
+			peserta.fullname,
+			TIME(CONVERT_TZ(absensi.created_at, '+00:00', '+07:00')) AS jam_local,
+			absensi.tag,
+			petugas.id_masjid
+		FROM absensi
+		LEFT JOIN peserta ON absensi.user_id = peserta.id
+		LEFT JOIN petugas ON absensi.mesin_id = petugas.id_user
+		WHERE absensi.event_id = ?
+		AND DATE(CONVERT_TZ(absensi.created_at, '+00:00', '+07:00')) = ?
+		ORDER BY absensi.created_at ASC
+	`
+
+	rows, err := database.DB.Query(query, idEvent, tanggal)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch data"})
+	}
+	defer rows.Close()
+
+	type SholatStatus struct {
+		Status       bool `json:"status"`
+		InThisMasjid bool `json:"inThisMasjid"`
+	}
+
+	type Rekap struct {
+		Name   string                  `json:"name"`
+		Sholat map[string]SholatStatus `json:"sholat"`
+	}
+
+	rekapMap := make(map[int]*Rekap)
+
+	for rows.Next() {
+		var userID int
+		var name string
+		var tag string
+		var jam string
+		var masjidID string
+
+		if err := rows.Scan(&userID, &name, &jam, &tag, &masjidID); err != nil {
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		// jika belum pernah muncul, inisialisasi map
+		if _, ok := rekapMap[userID]; !ok {
+			rekapMap[userID] = &Rekap{
+				Name:   name,
+				Sholat: make(map[string]SholatStatus),
+			}
+		}
+
+		// jika tag sholat belum ada di data user ini, set status-nya
+		if _, exists := rekapMap[userID].Sholat[tag]; !exists {
+			rekapMap[userID].Sholat[tag] = SholatStatus{
+				Status:       true,
+				InThisMasjid: masjidID == idMasjid,
+			}
+		}
+	}
+
+	// Filter hanya peserta yang pernah sholat di masjid ini
+	var result []Rekap
+	for _, r := range rekapMap {
+		adaDiMasjidIni := false
+		for _, status := range r.Sholat {
+			if status.InThisMasjid {
+				adaDiMasjidIni = true
+				break
+			}
+		}
+		if adaDiMasjidIni {
+			// Tambahkan tag sholat kosong ke dalam map jika belum ada (subuh-dzuhur-ashar-maghrib-isya)
+			for _, tag := range []string{"subuh", "dzuhur", "ashar", "maghrib", "isya"} {
+				if _, ok := r.Sholat[tag]; !ok {
+					r.Sholat[tag] = SholatStatus{Status: false, InThisMasjid: false}
+				}
+			}
+			result = append(result, *r)
+		}
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "Success",
+		"data":    result,
+	})
+}

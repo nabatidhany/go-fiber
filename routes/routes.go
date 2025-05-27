@@ -24,6 +24,7 @@ func SetupRoutes(app *fiber.App) {
 	api.Post("/register-itikaf", controllers.RegisterPesertaItikaf)
 	api.Get("/register-masjid/:id_event", controllers.GetMasjidList)
 	api.Get("/rekap-absen/:id_masjid", controllers.GetRekapAbsen)
+	api.Get("/rekap-absen-sholat/:id_masjid", controllers.GetRekapSholat)
 	api.Get("/get-masjid/:id_masjid", controllers.GetMasjidByID)
 	api.Get("/statistics-event", controllers.GetEventStatistics)
 	api.Get("/dashboard", controllers.GetNewRegistrantStatistics)
