@@ -457,30 +457,55 @@ func GetCollectionsMeta(c *fiber.Ctx) error {
 		// Build absensi query
 		var absenQuery string
 		if masjidID == "all" {
+			// absenQuery = fmt.Sprintf(`
+			// 	SELECT a.tag, COUNT(*) as total
+			// 	FROM absensi a
+			// 	JOIN petugas p ON a.mesin_id = p.id_user
+			// 	WHERE a.user_id IN (%s) AND a.tag IN (%s)
+			// 	AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) BETWEEN '%s' AND '%s'
+			// 	GROUP BY a.tag
+			// `, inPeserta, inTags, dateStart, dateEnd)
 			absenQuery = fmt.Sprintf(`
-				SELECT a.tag, COUNT(*) as total
-				FROM absensi a
-				JOIN petugas p ON a.mesin_id = p.id_user
-				WHERE a.user_id IN (%s) AND a.tag IN (%s)
-				AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) BETWEEN '%s' AND '%s'
-				GROUP BY a.tag
+				SELECT tag, COUNT(*) as total FROM (
+					SELECT DISTINCT a.user_id, a.tag, DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) as tanggal
+					FROM absensi a
+					JOIN petugas p ON a.mesin_id = p.id_user
+					WHERE a.user_id IN (%s)
+					AND a.tag IN (%s)
+					AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) BETWEEN '%s' AND '%s'
+				) as unique_daily_absen
+				GROUP BY tag
 			`, inPeserta, inTags, dateStart, dateEnd)
+
 		} else {
 			masjidIDs := strings.Split(masjidID, ",")
 			for i := range masjidIDs {
 				masjidIDs[i] = strings.TrimSpace(masjidIDs[i])
 			}
 			inMasjid := strings.Join(masjidIDs, ",")
+			// absenQuery = fmt.Sprintf(`
+			// 	SELECT a.tag, COUNT(*) as total
+			// 	FROM absensi a
+			// 	JOIN petugas p ON a.mesin_id = p.id_user
+			// 	WHERE p.id_masjid IN (%s)
+			// 	AND a.user_id IN (%s)
+			// 	AND a.tag IN (%s)
+			// 	AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) BETWEEN '%s' AND '%s'
+			// 	GROUP BY a.tag
+			// `, inMasjid, inPeserta, inTags, dateStart, dateEnd)
 			absenQuery = fmt.Sprintf(`
-				SELECT a.tag, COUNT(*) as total
-				FROM absensi a
-				JOIN petugas p ON a.mesin_id = p.id_user
-				WHERE p.id_masjid IN (%s)
-				AND a.user_id IN (%s)
-				AND a.tag IN (%s)
-				AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) BETWEEN '%s' AND '%s'
-				GROUP BY a.tag
+				SELECT tag, COUNT(*) as total FROM (
+					SELECT DISTINCT a.user_id, a.tag, DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) as tanggal
+					FROM absensi a
+					JOIN petugas p ON a.mesin_id = p.id_user
+					WHERE p.id_masjid IN (%s)
+					AND a.user_id IN (%s)
+					AND a.tag IN (%s)
+					AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) BETWEEN '%s' AND '%s'
+				) as unique_daily_absen
+				GROUP BY tag
 			`, inMasjid, inPeserta, inTags, dateStart, dateEnd)
+
 		}
 
 		// Execute absensi summary query
