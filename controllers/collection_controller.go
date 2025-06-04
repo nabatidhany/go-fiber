@@ -597,6 +597,67 @@ func GetCollectionsMetaDetail(c *fiber.Ctx) error {
 	})
 }
 
+func GetPesertaDanMasjid(c *fiber.Ctx) error {
+	type Peserta struct {
+		ID       int64  `json:"id"`
+		QRCode   string `json:"qr_code"`
+		Fullname string `json:"fullname"`
+	}
+
+	type Masjid struct {
+		ID   int64  `json:"id"`
+		Nama string `json:"nama"`
+	}
+
+	var pesertaList []Peserta
+	rows, err := database.DB.Query(`
+		SELECT p.id, p.qr_code, p.fullname
+		FROM detail_peserta dp
+		JOIN peserta p ON dp.id_peserta = p.id
+		WHERE dp.id_event = 3
+	`)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Gagal mengambil data peserta",
+		})
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var p Peserta
+		if err := rows.Scan(&p.ID, &p.QRCode, &p.Fullname); err != nil {
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Gagal membaca data peserta",
+			})
+		}
+		pesertaList = append(pesertaList, p)
+	}
+
+	var masjidList []Masjid
+	masjidRows, err := database.DB.Query(`SELECT id, nama FROM masjid`)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Gagal mengambil data masjid",
+		})
+	}
+	defer masjidRows.Close()
+
+	for masjidRows.Next() {
+		var m Masjid
+		if err := masjidRows.Scan(&m.ID, &m.Nama); err != nil {
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Gagal membaca data masjid",
+			})
+		}
+		masjidList = append(masjidList, m)
+	}
+
+	return c.JSON(fiber.Map{
+		"peserta": pesertaList,
+		"masjid":  masjidList,
+	})
+}
+
 // func GetCollectionsMetaDetail(c *fiber.Ctx) error {
 // 	slug := c.Params("slug")
 // 	query := `
