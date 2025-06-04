@@ -158,7 +158,7 @@ func GetRekapSholat(c *fiber.Ctx) error {
 			peserta.id,
 			peserta.fullname,
 			TIME(CONVERT_TZ(absensi.created_at, '+00:00', '+07:00')) AS jam_local,
-			absensi.tag,
+			COALESCE(absensi.tag, '') AS tag,
 			petugas.id_masjid
 		FROM absensi
 		LEFT JOIN peserta ON absensi.user_id = peserta.id
