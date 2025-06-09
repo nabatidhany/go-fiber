@@ -240,7 +240,24 @@ func SaveAbsenQR(c *fiber.Ctx) error {
 		// }
 
 		if tag == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "Absensi hanya diperbolehkan dalam rentang 30 menit sebelum dan sesudah waktu sholat"})
+			return c.Status(400).JSON(fiber.Map{"error": "Absensi hanya diperbolehkan dalam rentang 60 menit sebelum dan sesudah waktu sholat"})
+		}
+
+		// Validasi: jika user sudah absen di event dan tag yang sama
+		if tag != "" {
+			var alreadyExists bool
+			err = database.DB.QueryRow(
+				`SELECT EXISTS(SELECT 1 FROM absensi WHERE user_id = ? AND event_id = ? AND tag = ?)`,
+				userID, body.EventID, tag,
+			).Scan(&alreadyExists)
+			if err != nil {
+				log.Println("Error checking existing attendance:", err)
+				return c.Status(500).JSON(fiber.Map{"error": "Database error while checking existing attendance"})
+			}
+
+			if alreadyExists {
+				return c.Status(400).JSON(fiber.Map{"error": "User sudah absen untuk sholat " + strings.Title(tag)})
+			}
 		}
 	}
 
