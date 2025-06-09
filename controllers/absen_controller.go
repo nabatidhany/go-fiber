@@ -247,8 +247,8 @@ func SaveAbsenQR(c *fiber.Ctx) error {
 		if tag != "" {
 			var alreadyExists bool
 			err = database.DB.QueryRow(
-				`SELECT EXISTS(SELECT 1 FROM absensi WHERE user_id = ? AND event_id = ? AND tag = ?)`,
-				userID, body.EventID, tag,
+				`SELECT EXISTS(SELECT 1 FROM absensi WHERE user_id = ? AND event_id = ? AND tag = ? AND DATE(CONVERT_TZ(created_at, '+00:00', '+07:00') = ? )`,
+				userID, body.EventID, tag, date,
 			).Scan(&alreadyExists)
 			if err != nil {
 				log.Println("Error checking existing attendance:", err)
@@ -258,6 +258,47 @@ func SaveAbsenQR(c *fiber.Ctx) error {
 			if alreadyExists {
 				return c.Status(400).JSON(fiber.Map{"error": "User sudah absen untuk sholat " + strings.Title(tag)})
 			}
+		}
+
+		// 4. Hitung urutan kehadiran
+		var count int
+		err = database.DB.QueryRow(`
+			SELECT COUNT(*) FROM absensi 
+			WHERE event_id = ? AND tag = ? AND DATE(CONVERT_TZ(created_at, '+00:00', '+07:00')) = ?
+		`, body.EventID, tag, date).Scan(&count)
+		if err != nil {
+			log.Println("Error counting attendance:", err)
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to count attendance"})
+		}
+		urutanKehadiran := count + 1
+
+		// 5. Hitung point sholat
+		pointSholat := 0
+		switch strings.ToLower(tag) {
+		case "subuh":
+			pointSholat = 40
+		case "maghrib", "magrib":
+			pointSholat = 30
+		case "isya":
+			pointSholat = 30
+		}
+
+		// 6. Hitung point kehadiran
+		pointHadir := 0
+		if urutanKehadiran <= 10 {
+			pointHadir = 11 - urutanKehadiran
+		}
+
+		totalPoint := pointSholat + pointHadir
+
+		// Simpan poin ke tabel `poin`
+		_, err = database.DB.Exec(`
+			INSERT INTO poin (user_id, tanggal, tag, point_sholat, point_kehadiran, total_point)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			userID, date, tag, pointSholat, pointHadir, totalPoint)
+		if err != nil {
+			log.Println("Error inserting point:", err)
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to save point"})
 		}
 	}
 
