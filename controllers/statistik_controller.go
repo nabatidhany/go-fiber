@@ -609,39 +609,38 @@ func GetAttendanceStatistics(c *fiber.Ctx) error {
 	return c.JSON(attendanceStats)
 }
 
-type MasjidSummary struct {
-	MasjidID     int    `json:"masjid_id"`
-	MasjidNama   string `json:"masjid_nama"`
-	MasjidAlamat string `json:"masjid_alamat"`
-	MasjidRegion string `json:"masjid_regional"`
-	TotalCount   int    `json:"total_count"`
-	MaleCount    int    `json:"male_count"`
-	FemaleCount  int    `json:"female_count"`
-}
-
 func GetRekapPerMasjid(c *fiber.Ctx) error {
-	eventDate := c.Query("event_date") // format: "YYYY-MM-DD"
+	eventDate := c.Query("event_date")
 	if eventDate == "" {
-		eventDate = time.Now().Format("2006-01-02") // fallback hari ini
+		eventDate = time.Now().Format("2006-01-02")
 	}
 
 	query := `
-		SELECT
-			m.id AS masjid_id,
-			m.nama AS masjid_nama,
-			m.alamat AS masjid_alamat,
-			r.nama AS masjid_regional,
-			IFNULL(COUNT(DISTINCT CONCAT(a.user_id, '-', a.tag)), 0) AS total_count
-		FROM setting s
-		LEFT JOIN masjid m ON s.id_masjid = m.id
-		LEFT JOIN regional r ON m.regional_id = r.id
-		LEFT JOIN petugas pt ON m.id = pt.id_masjid
-		LEFT JOIN absensi a ON a.mesin_id = pt.id_user
-			AND a.tag IS NOT NULL
-			AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) = ?
-		WHERE s.id_event = 3
-		GROUP BY m.id, m.nama, m.alamat, r.nama
-		ORDER BY total_count DESC
+		SELECT 
+    m.id AS masjid_id,
+    m.nama AS masjid_nama,
+    m.alamat AS masjid_alamat,
+    r.nama AS masjid_regional,
+    COUNT(DISTINCT dt.user_id, dt.tag) AS total_count,
+    COUNT(DISTINCT CASE WHEN dt.tag = 'subuh' THEN dt.user_id END) AS subuh_count,
+    COUNT(DISTINCT CASE WHEN dt.tag = 'dzuhur' THEN dt.user_id END) AS dzuhur_count,
+    COUNT(DISTINCT CASE WHEN dt.tag = 'ashar' THEN dt.user_id END) AS ashar_count,
+    COUNT(DISTINCT CASE WHEN dt.tag = 'maghrib' THEN dt.user_id END) AS maghrib_count,
+    COUNT(DISTINCT CASE WHEN dt.tag = 'isya' THEN dt.user_id END) AS isya_count
+FROM setting s
+LEFT JOIN masjid m ON s.id_masjid = m.id
+LEFT JOIN regional r ON m.regional_id = r.id
+LEFT JOIN petugas pt ON m.id = pt.id_masjid
+LEFT JOIN (
+    SELECT DISTINCT user_id, tag, mesin_id, DATE(CONVERT_TZ(created_at, '+00:00', '+07:00')) as event_date
+    FROM absensi
+    WHERE tag IS NOT NULL
+      AND DATE(CONVERT_TZ(created_at, '+00:00', '+07:00')) = ?
+) dt ON dt.mesin_id = pt.id_user
+WHERE s.id_event = 3
+GROUP BY m.id, m.nama, m.alamat, r.nama
+ORDER BY total_count DESC
+
 	`
 
 	rows, err := database.DB.Query(query, eventDate)
@@ -657,6 +656,11 @@ func GetRekapPerMasjid(c *fiber.Ctx) error {
 		MasjidAlamat string `json:"masjid_alamat"`
 		MasjidRegion string `json:"masjid_regional"`
 		TotalCount   int    `json:"total_count"`
+		SubuhCount   int    `json:"subuh_count"`
+		DzuhurCount  int    `json:"dzuhur_count"`
+		AsharCount   int    `json:"ashar_count"`
+		MaghribCount int    `json:"maghrib_count"`
+		IsyaCount    int    `json:"isya_count"`
 	}
 
 	var result []MasjidSummary
@@ -668,6 +672,11 @@ func GetRekapPerMasjid(c *fiber.Ctx) error {
 			&ms.MasjidAlamat,
 			&ms.MasjidRegion,
 			&ms.TotalCount,
+			&ms.SubuhCount,
+			&ms.DzuhurCount,
+			&ms.AsharCount,
+			&ms.MaghribCount,
+			&ms.IsyaCount,
 		); err != nil {
 			log.Println("Row scan error:", err)
 			continue
