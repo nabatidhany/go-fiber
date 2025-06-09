@@ -247,7 +247,7 @@ func SaveAbsenQR(c *fiber.Ctx) error {
 		if tag != "" {
 			var alreadyExists bool
 			err = database.DB.QueryRow(
-				`SELECT EXISTS(SELECT 1 FROM absensi WHERE user_id = ? AND event_id = ? AND tag = ? AND DATE(CONVERT_TZ(created_at, '+00:00', '+07:00') = ? )`,
+				`SELECT EXISTS(SELECT 1 FROM absensi WHERE user_id = ? AND event_id = ? AND tag = ? AND DATE(CONVERT_TZ(created_at, '+00:00', '+07:00')) = ? )`,
 				userID, body.EventID, tag, date,
 			).Scan(&alreadyExists)
 			if err != nil {
@@ -264,8 +264,8 @@ func SaveAbsenQR(c *fiber.Ctx) error {
 		var count int
 		err = database.DB.QueryRow(`
 			SELECT COUNT(*) FROM absensi 
-			WHERE event_id = ? AND tag = ? AND DATE(CONVERT_TZ(created_at, '+00:00', '+07:00')) = ?
-		`, body.EventID, tag, date).Scan(&count)
+			WHERE event_id = ? AND tag = ? AND DATE(CONVERT_TZ(created_at, '+00:00', '+07:00')) = ? and mesin_id = ?
+		`, body.EventID, tag, date, body.MesinID).Scan(&count)
 		if err != nil {
 			log.Println("Error counting attendance:", err)
 			return c.Status(500).JSON(fiber.Map{"error": "Failed to count attendance"})
