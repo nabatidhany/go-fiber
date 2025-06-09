@@ -69,7 +69,7 @@ func SaveAbsenQR(c *fiber.Ctx) error {
 	var body struct {
 		QRCode  string `json:"qr_code"`
 		EventID int    `json:"event_id"`
-		MesinID int    `json:"mesin_id"`
+		MesinID string `json:"mesin_id"`
 	}
 
 	if err := c.BodyParser(&body); err != nil {
