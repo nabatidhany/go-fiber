@@ -29,6 +29,7 @@ func SetupRoutes(app *fiber.App) {
 	api.Get("/statistics-event", controllers.GetEventStatistics)
 	api.Get("/dashboard", controllers.GetNewRegistrantStatistics)
 	api.Get("/statistics-event-all", controllers.GetAttendanceStatistics)
+	api.Get("/statistics-rekap-masjid", controllers.GetRekapPerMasjid)
 
 	apiV1 := app.Group("/api/v1")
 	apiV1.Post("/absent-qr", ApiKeyMiddleware, controllers.SaveAbsenQR)

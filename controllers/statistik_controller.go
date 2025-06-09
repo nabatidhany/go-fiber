@@ -608,3 +608,72 @@ func GetAttendanceStatistics(c *fiber.Ctx) error {
 
 	return c.JSON(attendanceStats)
 }
+
+type MasjidSummary struct {
+	MasjidID     int    `json:"masjid_id"`
+	MasjidNama   string `json:"masjid_nama"`
+	MasjidAlamat string `json:"masjid_alamat"`
+	MasjidRegion string `json:"masjid_regional"`
+	TotalCount   int    `json:"total_count"`
+	MaleCount    int    `json:"male_count"`
+	FemaleCount  int    `json:"female_count"`
+}
+
+func GetRekapPerMasjid(c *fiber.Ctx) error {
+	eventDate := c.Query("event_date") // format: "YYYY-MM-DD"
+	if eventDate == "" {
+		eventDate = time.Now().Format("2006-01-02") // fallback hari ini
+	}
+
+	query := `
+		SELECT
+			m.id AS masjid_id,
+			m.nama AS masjid_nama,
+			m.alamat AS masjid_alamat,
+			r.nama AS masjid_regional,
+			IFNULL(COUNT(DISTINCT CONCAT(a.user_id, '-', a.tag)), 0) AS total_count
+		FROM setting s
+		LEFT JOIN masjid m ON s.id_masjid = m.id
+		LEFT JOIN regional r ON m.regional_id = r.id
+		LEFT JOIN petugas pt ON m.id = pt.id_masjid
+		LEFT JOIN absensi a ON a.mesin_id = pt.id_user
+			AND a.tag IS NOT NULL
+			AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) = ?
+		WHERE s.id_event = 3
+		GROUP BY m.id, m.nama, m.alamat, r.nama
+		ORDER BY total_count DESC
+	`
+
+	rows, err := database.DB.Query(query, eventDate)
+	if err != nil {
+		log.Println("Query error:", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Database query failed"})
+	}
+	defer rows.Close()
+
+	type MasjidSummary struct {
+		MasjidID     int    `json:"masjid_id"`
+		MasjidNama   string `json:"masjid_nama"`
+		MasjidAlamat string `json:"masjid_alamat"`
+		MasjidRegion string `json:"masjid_regional"`
+		TotalCount   int    `json:"total_count"`
+	}
+
+	var result []MasjidSummary
+	for rows.Next() {
+		var ms MasjidSummary
+		if err := rows.Scan(
+			&ms.MasjidID,
+			&ms.MasjidNama,
+			&ms.MasjidAlamat,
+			&ms.MasjidRegion,
+			&ms.TotalCount,
+		); err != nil {
+			log.Println("Row scan error:", err)
+			continue
+		}
+		result = append(result, ms)
+	}
+
+	return c.JSON(result)
+}
