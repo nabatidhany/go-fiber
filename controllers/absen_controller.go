@@ -1,8 +1,9 @@
 package controllers
 
 import (
-	"database/sql"
+	"encoding/json"
 	"log"
+	"net/http"
 	"shollu/database"
 	"strings"
 	"time"
@@ -65,331 +66,215 @@ import (
 // 	})
 // }
 
+// new version
 func SaveAbsenQR(c *fiber.Ctx) error {
-	var body struct {
+	body := struct {
+		MesinID string `json:"mesin_id"`
 		QRCode  string `json:"qr_code"`
 		EventID int    `json:"event_id"`
-		MesinID string `json:"mesin_id"`
-	}
+	}{}
 
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	// 1. Ambil user berdasarkan QR code
+	if body.MesinID == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "mesin_id is required"})
+	}
+
+	if body.QRCode == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "No QR code data provided"})
+	}
+
+	// Cek user berdasarkan QR Code
 	var userID int
 	var fullname string
-	err := database.DB.QueryRow("SELECT id, fullname FROM users WHERE finger_id = ?", body.QRCode).Scan(&userID, &fullname)
+	err := database.DB.QueryRow("SELECT id, fullname FROM peserta WHERE qr_code = ?", body.QRCode).Scan(&userID, &fullname)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return c.Status(404).JSON(fiber.Map{"error": "QR Code not found"})
+		log.Println("QR Code not found in database:", err)
+		return c.Status(404).JSON(fiber.Map{"error": "No matching QR code found"})
+	}
+
+	// Cek apakah user terdaftar dalam event
+	var exists bool
+	err = database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM detail_peserta WHERE id_peserta = ? AND id_event = ?)", userID, body.EventID).Scan(&exists)
+	if err != nil {
+		log.Println("Error checking event participation:", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Database error while checking event participation"})
+	}
+	if !exists {
+		return c.Status(404).JSON(fiber.Map{"error": "User is not registered for this event"})
+	}
+
+	// Default tag kosong
+	tag := ""
+
+	if body.EventID == 3 {
+		// Ambil id_masjid dari tabel petugas
+		var idMasjid int
+		err = database.DB.QueryRow("SELECT id_masjid FROM petugas WHERE id_user = ?", body.MesinID).Scan(&idMasjid)
+		if err != nil {
+			log.Println("Masjid not found for the given MesinID:", err)
+			return c.Status(404).JSON(fiber.Map{"error": "Masjid not found for this MesinID"})
 		}
-		log.Println("Error finding user:", err)
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to find user"})
-	}
 
-	// 2. Ambil event
-	var tag string
-	err = database.DB.QueryRow("SELECT tag FROM events WHERE id = ?", body.EventID).Scan(&tag)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return c.Status(404).JSON(fiber.Map{"error": "Event not found"})
+		// Ambil id_regional dari tabel masjid
+		var idRegional int
+		err = database.DB.QueryRow("SELECT regional_id FROM masjid WHERE id = ?", idMasjid).Scan(&idRegional)
+		if err != nil {
+			log.Println("Regional ID not found for Masjid:", err)
+			return c.Status(404).JSON(fiber.Map{"error": "Regional ID not found for Masjid"})
 		}
-		log.Println("Error finding event:", err)
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to find event"})
+
+		// Ambil kode kota dari tabel regional
+		var kotaCode string
+		err = database.DB.QueryRow("SELECT code FROM regional WHERE id = ?", idRegional).Scan(&kotaCode)
+		if err != nil {
+			log.Println("Regional code not found:", err)
+			return c.Status(404).JSON(fiber.Map{"error": "Regional code not found"})
+		}
+
+		// Ambil jadwal sholat dari API
+		date := time.Now().Format("2006-01-02")
+		apiURL := "https://api.myquran.com/v2/sholat/jadwal/" + kotaCode + "/" + date
+		resp, err := http.Get(apiURL)
+		if err != nil {
+			log.Println("Error fetching prayer schedule:", err)
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch prayer schedule"})
+		}
+		defer resp.Body.Close()
+
+		var result struct {
+			Data struct {
+				Jadwal map[string]string `json:"jadwal"`
+			} `json:"data"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			log.Println("Error decoding prayer schedule response:", err)
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to decode prayer schedule response"})
+		}
+
+		// Tentukan waktu sholat berdasarkan jam saat ini
+		// Gunakan zona waktu WIB
+		loc, _ := time.LoadLocation("Asia/Jakarta")
+		currentTime := time.Now().In(loc)
+
+		// Daftar jadwal sholat yang diperbolehkan
+		validPrayers := map[string]bool{
+			"subuh":   true,
+			"dzuhur":  true,
+			"ashar":   true,
+			"maghrib": true,
+			"isya":    true,
+		}
+
+		// Ambil konfigurasi rentang waktu dari database
+		configs := make(map[string]struct {
+			Before time.Duration
+			After  time.Duration
+		})
+
+		rows, err := database.DB.Query("SELECT nama_sholat, sebelum_menit, sesudah_menit FROM sholat_config")
+		if err != nil {
+			log.Println("Failed to fetch sholat configs:", err)
+			return c.Status(500).JSON(fiber.Map{"error": "Database error while fetching sholat configs"})
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var name string
+			var before, after int
+			if err := rows.Scan(&name, &before, &after); err != nil {
+				continue
+			}
+			configs[strings.ToLower(name)] = struct {
+				Before time.Duration
+				After  time.Duration
+			}{
+				Before: time.Duration(before) * time.Minute,
+				After:  time.Duration(after) * time.Minute,
+			}
+		}
+
+		for prayer, prayerTime := range result.Data.Jadwal {
+			lowerPrayer := strings.ToLower(prayer)
+			conf, ok := configs[lowerPrayer]
+			if !ok {
+				continue // skip jika tidak ada config-nya
+			}
+			// Hanya proses jadwal sholat yang valid
+			if !validPrayers[lowerPrayer] {
+				continue
+			}
+
+			prayerDateTime, err := time.ParseInLocation("2006-01-02 15:04", date+" "+prayerTime, loc)
+			if err != nil {
+				log.Println("Failed to parse prayer time:", prayer, prayerTime)
+				continue
+			}
+
+			// startTime := prayerDateTime.Add(-30 * time.Minute)
+			// endTime := prayerDateTime.Add(30 * time.Minute)
+
+			startTime := prayerDateTime.Add(-conf.Before)
+			endTime := prayerDateTime.Add(conf.After)
+
+			if currentTime.After(startTime) && currentTime.Before(endTime) {
+				tag = lowerPrayer
+				break
+			}
+		}
+
+		// for prayer, prayerTime := range result.Data.Jadwal {
+		// 	// Gabungkan dengan tanggal hari ini sebelum parsing
+		// 	prayerDateTime, _ := time.ParseInLocation("2006-01-02 15:04", date+" "+prayerTime, loc)
+
+		// 	startTime := prayerDateTime.Add(-30 * time.Minute)
+		// 	endTime := prayerDateTime.Add(30 * time.Minute)
+
+		// 	if currentTime.After(startTime) && currentTime.Before(endTime) {
+		// 		tag = prayer
+		// 		break
+		// 	}
+		// }
+
+		if tag == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "Absensi hanya diperbolehkan dalam rentang 60 menit sebelum dan sesudah waktu sholat"})
+		}
+
+		// Validasi: jika user sudah absen di event dan tag yang sama
+		if tag != "" {
+			var alreadyExists bool
+			err = database.DB.QueryRow(
+				`SELECT EXISTS(SELECT 1 FROM absensi WHERE user_id = ? AND event_id = ? AND tag = ?)`,
+				userID, body.EventID, tag,
+			).Scan(&alreadyExists)
+			if err != nil {
+				log.Println("Error checking existing attendance:", err)
+				return c.Status(500).JSON(fiber.Map{"error": "Database error while checking existing attendance"})
+			}
+
+			if alreadyExists {
+				return c.Status(400).JSON(fiber.Map{"error": "User sudah absen untuk sholat " + strings.Title(tag)})
+			}
+		}
 	}
 
-	// 3. Cek apakah sudah absen hari ini untuk event dan tag yang sama
-	loc, _ := time.LoadLocation("Asia/Jakarta")
-	now := time.Now().In(loc)
-	today := now.Format("2006-01-02")
-
-	var existing int
-	err = database.DB.QueryRow(`
-		SELECT COUNT(*) FROM absensi 
-		WHERE user_id = ? AND event_id = ? AND tag = ? AND DATE(CONVERT_TZ(jam, '+00:00', '+07:00')) = ?
-	`, userID, body.EventID, tag, today).Scan(&existing)
+	// Simpan absensi
+	_, err = database.DB.Exec("INSERT INTO absensi (user_id, finger_id, jam, mesin_id, event_id, tag) VALUES (?, ?, ?, ?, ?, ?)",
+		userID, body.QRCode, time.Now().UTC(), body.MesinID, body.EventID, tag)
 	if err != nil {
-		log.Println("Error checking duplicate attendance:", err)
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to check existing attendance"})
-	}
-	if existing > 0 {
-		return c.Status(400).JSON(fiber.Map{"error": "Already checked in today for this event and tag"})
+		log.Println("Error inserting attendance record:", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to save attendance record"})
 	}
 
-	// 4. Hitung urutan kehadiran
-	var count int
-	err = database.DB.QueryRow(`
-		SELECT COUNT(*) FROM absensi 
-		WHERE event_id = ? AND tag = ? AND DATE(CONVERT_TZ(jam, '+00:00', '+07:00')) = ?
-	`, body.EventID, tag, today).Scan(&count)
-	if err != nil {
-		log.Println("Error counting attendance:", err)
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to count attendance"})
-	}
-	urutanKehadiran := count + 1
-
-	// 5. Hitung point sholat
-	pointSholat := 0
-	switch strings.ToLower(tag) {
-	case "subuh":
-		pointSholat = 40
-	case "maghrib", "magrib":
-		pointSholat = 30
-	case "isya":
-		pointSholat = 30
-	}
-
-	// 6. Hitung point kehadiran
-	pointHadir := 0
-	if urutanKehadiran <= 10 {
-		pointHadir = 11 - urutanKehadiran
-	}
-
-	totalPoint := pointSholat + pointHadir
-
-	// 7. Simpan absensi ke tabel absensi
-	_, err = database.DB.Exec(`
-		INSERT INTO absensi (user_id, finger_id, jam, mesin_id, event_id, tag)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		userID, body.QRCode, now.UTC(), body.MesinID, body.EventID, tag)
-	if err != nil {
-		log.Println("Error inserting attendance:", err)
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to save attendance"})
-	}
-
-	// 8. Simpan poin ke tabel `poin`
-	_, err = database.DB.Exec(`
-		INSERT INTO poin (user_id, tanggal, tag, point_sholat, point_kehadiran, total_point)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		userID, today, tag, pointSholat, pointHadir, totalPoint)
-	if err != nil {
-		log.Println("Error inserting point:", err)
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to save point"})
-	}
-
-	// 9. Response sukses
 	return c.JSON(fiber.Map{
-		"message":          "Absensi dan poin berhasil disimpan",
-		"user_id":          userID,
-		"fullname":         fullname,
-		"tag":              tag,
-		"urutan_kehadiran": urutanKehadiran,
-		"point_sholat":     pointSholat,
-		"point_kehadiran":  pointHadir,
-		"total_point":      totalPoint,
+		"message":  "QR Code found and attendance recorded",
+		"qr_code":  body.QRCode,
+		"user_id":  userID,
+		"fullname": fullname,
+		"event_id": body.EventID,
+		"tag":      tag,
 	})
 }
-
-// new version backup
-// func SaveAbsenQR(c *fiber.Ctx) error {
-// 	body := struct {
-// 		MesinID string `json:"mesin_id"`
-// 		QRCode  string `json:"qr_code"`
-// 		EventID int    `json:"event_id"`
-// 	}{}
-
-// 	if err := c.BodyParser(&body); err != nil {
-// 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
-// 	}
-
-// 	if body.MesinID == "" {
-// 		return c.Status(400).JSON(fiber.Map{"error": "mesin_id is required"})
-// 	}
-
-// 	if body.QRCode == "" {
-// 		return c.Status(400).JSON(fiber.Map{"error": "No QR code data provided"})
-// 	}
-
-// 	// Cek user berdasarkan QR Code
-// 	var userID int
-// 	var fullname string
-// 	err := database.DB.QueryRow("SELECT id, fullname FROM peserta WHERE qr_code = ?", body.QRCode).Scan(&userID, &fullname)
-// 	if err != nil {
-// 		log.Println("QR Code not found in database:", err)
-// 		return c.Status(404).JSON(fiber.Map{"error": "No matching QR code found"})
-// 	}
-
-// 	// Cek apakah user terdaftar dalam event
-// 	var exists bool
-// 	err = database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM detail_peserta WHERE id_peserta = ? AND id_event = ?)", userID, body.EventID).Scan(&exists)
-// 	if err != nil {
-// 		log.Println("Error checking event participation:", err)
-// 		return c.Status(500).JSON(fiber.Map{"error": "Database error while checking event participation"})
-// 	}
-// 	if !exists {
-// 		return c.Status(404).JSON(fiber.Map{"error": "User is not registered for this event"})
-// 	}
-
-// 	// Default tag kosong
-// 	tag := ""
-
-// 	if body.EventID == 3 {
-// 		// Ambil id_masjid dari tabel petugas
-// 		var idMasjid int
-// 		err = database.DB.QueryRow("SELECT id_masjid FROM petugas WHERE id_user = ?", body.MesinID).Scan(&idMasjid)
-// 		if err != nil {
-// 			log.Println("Masjid not found for the given MesinID:", err)
-// 			return c.Status(404).JSON(fiber.Map{"error": "Masjid not found for this MesinID"})
-// 		}
-
-// 		// Ambil id_regional dari tabel masjid
-// 		var idRegional int
-// 		err = database.DB.QueryRow("SELECT regional_id FROM masjid WHERE id = ?", idMasjid).Scan(&idRegional)
-// 		if err != nil {
-// 			log.Println("Regional ID not found for Masjid:", err)
-// 			return c.Status(404).JSON(fiber.Map{"error": "Regional ID not found for Masjid"})
-// 		}
-
-// 		// Ambil kode kota dari tabel regional
-// 		var kotaCode string
-// 		err = database.DB.QueryRow("SELECT code FROM regional WHERE id = ?", idRegional).Scan(&kotaCode)
-// 		if err != nil {
-// 			log.Println("Regional code not found:", err)
-// 			return c.Status(404).JSON(fiber.Map{"error": "Regional code not found"})
-// 		}
-
-// 		// Ambil jadwal sholat dari API
-// 		date := time.Now().Format("2006-01-02")
-// 		apiURL := "https://api.myquran.com/v2/sholat/jadwal/" + kotaCode + "/" + date
-// 		resp, err := http.Get(apiURL)
-// 		if err != nil {
-// 			log.Println("Error fetching prayer schedule:", err)
-// 			return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch prayer schedule"})
-// 		}
-// 		defer resp.Body.Close()
-
-// 		var result struct {
-// 			Data struct {
-// 				Jadwal map[string]string `json:"jadwal"`
-// 			} `json:"data"`
-// 		}
-
-// 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-// 			log.Println("Error decoding prayer schedule response:", err)
-// 			return c.Status(500).JSON(fiber.Map{"error": "Failed to decode prayer schedule response"})
-// 		}
-
-// 		// Tentukan waktu sholat berdasarkan jam saat ini
-// 		// Gunakan zona waktu WIB
-// 		loc, _ := time.LoadLocation("Asia/Jakarta")
-// 		currentTime := time.Now().In(loc)
-
-// 		// Daftar jadwal sholat yang diperbolehkan
-// 		validPrayers := map[string]bool{
-// 			"subuh":   true,
-// 			"dzuhur":  true,
-// 			"ashar":   true,
-// 			"maghrib": true,
-// 			"isya":    true,
-// 		}
-
-// 		// Ambil konfigurasi rentang waktu dari database
-// 		configs := make(map[string]struct {
-// 			Before time.Duration
-// 			After  time.Duration
-// 		})
-
-// 		rows, err := database.DB.Query("SELECT nama_sholat, sebelum_menit, sesudah_menit FROM sholat_config")
-// 		if err != nil {
-// 			log.Println("Failed to fetch sholat configs:", err)
-// 			return c.Status(500).JSON(fiber.Map{"error": "Database error while fetching sholat configs"})
-// 		}
-// 		defer rows.Close()
-
-// 		for rows.Next() {
-// 			var name string
-// 			var before, after int
-// 			if err := rows.Scan(&name, &before, &after); err != nil {
-// 				continue
-// 			}
-// 			configs[strings.ToLower(name)] = struct {
-// 				Before time.Duration
-// 				After  time.Duration
-// 			}{
-// 				Before: time.Duration(before) * time.Minute,
-// 				After:  time.Duration(after) * time.Minute,
-// 			}
-// 		}
-
-// 		for prayer, prayerTime := range result.Data.Jadwal {
-// 			lowerPrayer := strings.ToLower(prayer)
-// 			conf, ok := configs[lowerPrayer]
-// 			if !ok {
-// 				continue // skip jika tidak ada config-nya
-// 			}
-// 			// Hanya proses jadwal sholat yang valid
-// 			if !validPrayers[lowerPrayer] {
-// 				continue
-// 			}
-
-// 			prayerDateTime, err := time.ParseInLocation("2006-01-02 15:04", date+" "+prayerTime, loc)
-// 			if err != nil {
-// 				log.Println("Failed to parse prayer time:", prayer, prayerTime)
-// 				continue
-// 			}
-
-// 			// startTime := prayerDateTime.Add(-30 * time.Minute)
-// 			// endTime := prayerDateTime.Add(30 * time.Minute)
-
-// 			startTime := prayerDateTime.Add(-conf.Before)
-// 			endTime := prayerDateTime.Add(conf.After)
-
-// 			if currentTime.After(startTime) && currentTime.Before(endTime) {
-// 				tag = lowerPrayer
-// 				break
-// 			}
-// 		}
-
-// 		// for prayer, prayerTime := range result.Data.Jadwal {
-// 		// 	// Gabungkan dengan tanggal hari ini sebelum parsing
-// 		// 	prayerDateTime, _ := time.ParseInLocation("2006-01-02 15:04", date+" "+prayerTime, loc)
-
-// 		// 	startTime := prayerDateTime.Add(-30 * time.Minute)
-// 		// 	endTime := prayerDateTime.Add(30 * time.Minute)
-
-// 		// 	if currentTime.After(startTime) && currentTime.Before(endTime) {
-// 		// 		tag = prayer
-// 		// 		break
-// 		// 	}
-// 		// }
-
-// 		if tag == "" {
-// 			return c.Status(400).JSON(fiber.Map{"error": "Absensi hanya diperbolehkan dalam rentang 60 menit sebelum dan sesudah waktu sholat"})
-// 		}
-
-// 		// Validasi: jika user sudah absen di event dan tag yang sama
-// 		if tag != "" {
-// 			var alreadyExists bool
-// 			err = database.DB.QueryRow(
-// 				`SELECT EXISTS(SELECT 1 FROM absensi WHERE user_id = ? AND event_id = ? AND tag = ?)`,
-// 				userID, body.EventID, tag,
-// 			).Scan(&alreadyExists)
-// 			if err != nil {
-// 				log.Println("Error checking existing attendance:", err)
-// 				return c.Status(500).JSON(fiber.Map{"error": "Database error while checking existing attendance"})
-// 			}
-
-// 			if alreadyExists {
-// 				return c.Status(400).JSON(fiber.Map{"error": "User sudah absen untuk sholat " + strings.Title(tag)})
-// 			}
-// 		}
-// 	}
-
-// 	// Simpan absensi
-// 	_, err = database.DB.Exec("INSERT INTO absensi (user_id, finger_id, jam, mesin_id, event_id, tag) VALUES (?, ?, ?, ?, ?, ?)",
-// 		userID, body.QRCode, time.Now().UTC(), body.MesinID, body.EventID, tag)
-// 	if err != nil {
-// 		log.Println("Error inserting attendance record:", err)
-// 		return c.Status(500).JSON(fiber.Map{"error": "Failed to save attendance record"})
-// 	}
-
-// 	return c.JSON(fiber.Map{
-// 		"message":  "QR Code found and attendance recorded",
-// 		"qr_code":  body.QRCode,
-// 		"user_id":  userID,
-// 		"fullname": fullname,
-// 		"event_id": body.EventID,
-// 		"tag":      tag,
-// 	})
-// }
