@@ -161,7 +161,7 @@ func GetRekapSholat(c *fiber.Ctx) error {
 			COALESCE(absensi.tag, '') AS tag,
 			petugas.id_masjid
 		FROM absensi
-		LEFT JOIN peserta ON absensi.user_id = peserta.id
+		INNER JOIN peserta ON absensi.user_id = peserta.id
 		LEFT JOIN petugas ON absensi.mesin_id = petugas.id_user
 		WHERE absensi.event_id = ?
 		AND DATE(CONVERT_TZ(absensi.created_at, '+00:00', '+07:00')) = ?
