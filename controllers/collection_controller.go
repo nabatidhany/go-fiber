@@ -658,6 +658,47 @@ func GetPesertaDanMasjid(c *fiber.Ctx) error {
 	})
 }
 
+type AddPesertaToCollectionRequest struct {
+	CollectionID int64   `json:"collection_id" validate:"required"`
+	PesertaIDs   []int64 `json:"peserta_ids" validate:"required,dive,required"`
+}
+
+// Fungsi untuk menambahkan peserta baru ke collection_items
+func AddPesertaToCollection(c *fiber.Ctx) error {
+	var req AddPesertaToCollectionRequest
+
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request"})
+	}
+
+	// Ambil slug dari collection_id
+	var slug string
+	err := database.DB.QueryRow(`
+		SELECT slug FROM collections WHERE id = ?`, req.CollectionID).Scan(&slug)
+	if err != nil {
+		return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "Collection not found"})
+	}
+
+	now := time.Now()
+
+	// Masukkan peserta satu per satu ke collection_items
+	for _, idPeserta := range req.PesertaIDs {
+		_, err := database.DB.Exec(`
+			INSERT INTO collection_items (create_time, collection_id, collection_slug, id_peserta)
+			VALUES (?, ?, ?, ?)`, now, req.CollectionID, slug, idPeserta)
+
+		if err != nil {
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+				"error": fmt.Sprintf("Failed to insert peserta ID %d: %v", idPeserta, err),
+			})
+		}
+	}
+
+	return c.Status(http.StatusCreated).JSON(fiber.Map{
+		"message": "Peserta berhasil ditambahkan ke koleksi",
+	})
+}
+
 // func GetCollectionsMetaDetail(c *fiber.Ctx) error {
 // 	slug := c.Params("slug")
 // 	query := `
