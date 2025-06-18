@@ -70,6 +70,107 @@ func GetNewRegistrantStatistics(c *fiber.Ctx) error {
 
 }
 
+func GetAbsensiStatistics(c *fiber.Ctx) error {
+	tanggal := c.Query("tanggal")
+	if tanggal == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "tanggal is required"})
+	}
+
+	query := `
+	SELECT 
+		tag_clean AS tag,
+		kategori,
+		COUNT(DISTINCT user_tag_date) AS jumlah,
+		total.total_peserta,
+		gender.jumlah_pria,
+		gender.jumlah_wanita,
+		all_peserta.total_peserta_terdaftar
+	FROM (
+		SELECT 
+			a.user_id,
+			DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) AS tgl_wib,
+			LOWER(TRIM(a.tag)) AS tag_clean,
+			CONCAT(a.user_id, '-', LOWER(TRIM(a.tag)), '-', DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00'))) AS user_tag_date,
+			CASE 
+				WHEN STR_TO_DATE(p.dob, '%Y-%m-%d') IS NULL THEN 'umum'
+				WHEN TIMESTAMPDIFF(YEAR, STR_TO_DATE(p.dob, '%Y-%m-%d'), CURDATE()) <= 17 THEN 'pelajar'
+				ELSE 'umum'
+			END AS kategori
+		FROM absensi a
+		JOIN peserta p ON a.user_id = p.id
+		WHERE LOWER(TRIM(a.tag)) IN ('subuh', 'dzuhur', 'ashar', 'magrib', 'isya')
+			AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) = ?
+	) AS absen_clean
+	JOIN (
+		SELECT COUNT(DISTINCT user_id) AS total_peserta
+		FROM absensi
+		WHERE DATE(CONVERT_TZ(created_at, '+00:00', '+07:00')) = ?
+	) AS total ON 1=1
+	JOIN (
+		SELECT
+			SUM(CASE 
+				WHEN LOWER(TRIM(p.gender)) IN ('laki-laki', 'male', 'lk', 'pria') THEN 1
+				ELSE 0
+			END) AS jumlah_pria,
+			SUM(CASE 
+				WHEN LOWER(TRIM(p.gender)) IN ('perempuan', 'female', 'wanita') THEN 1
+				ELSE 0
+			END) AS jumlah_wanita
+		FROM (
+			SELECT DISTINCT user_id
+			FROM absensi
+			WHERE DATE(CONVERT_TZ(created_at, '+00:00', '+07:00')) = ?
+		) absen_unik
+		JOIN peserta p ON p.id = absen_unik.user_id
+	) AS gender ON 1=1
+	JOIN (
+		SELECT COUNT(*) AS total_peserta_terdaftar FROM peserta
+	) AS all_peserta ON 1=1
+	GROUP BY tag, kategori;
+	`
+
+	rows, err := database.DB.Query(query, tanggal, tanggal, tanggal)
+	if err != nil {
+		log.Println("Query error:", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Database query failed"})
+	}
+	defer rows.Close()
+
+	statistik := map[string]map[string]int{}
+	var totalHadir, totalTerdaftar, jumlahPria, jumlahWanita int
+	for rows.Next() {
+		var tag, kategori string
+		var jumlah, pesertaHadir, pesertaTerdaftar, pria, wanita int
+
+		if err := rows.Scan(&tag, &kategori, &jumlah, &pesertaHadir, &pria, &wanita, &pesertaTerdaftar); err != nil {
+			log.Println("Scan error:", err)
+			continue
+		}
+
+		// Set total hanya sekali
+		if totalHadir == 0 {
+			totalHadir = pesertaHadir
+			totalTerdaftar = pesertaTerdaftar
+			jumlahPria = pria
+			jumlahWanita = wanita
+		}
+
+		if _, exists := statistik[tag]; !exists {
+			statistik[tag] = map[string]int{}
+		}
+		statistik[tag][kategori] = jumlah
+	}
+
+	return c.JSON(fiber.Map{
+		"tanggal":                 tanggal,
+		"total_peserta_hadir":     totalHadir,
+		"total_peserta_terdaftar": totalTerdaftar,
+		"jumlah_pria":             jumlahPria,
+		"jumlah_wanita":           jumlahWanita,
+		"statistik_per_sholat":    statistik,
+	})
+}
+
 // func GetNewRegistrantStatistics(c *fiber.Ctx) error {
 // 	// Ambil event_id dari query parameter
 // 	eventIDStr := c.Query("event_id")
