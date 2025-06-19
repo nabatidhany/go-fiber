@@ -98,7 +98,7 @@ func GetAbsensiStatistics(c *fiber.Ctx) error {
 			END AS kategori
 		FROM absensi a
 		JOIN peserta p ON a.user_id = p.id
-		WHERE LOWER(TRIM(a.tag)) IN ('subuh', 'dzuhur', 'ashar', 'magrib', 'isya')
+		WHERE LOWER(TRIM(a.tag)) IN ('subuh', 'dzuhur', 'ashar', 'maghrib', 'isya')
 			AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) = ?
 	) AS absen_clean
 	JOIN (
