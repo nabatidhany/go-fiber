@@ -14,28 +14,28 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-type cachedJadwal struct {
-	Jadwal map[string]string
-	Expiry time.Time
-	Date   string
-}
+// type cachedJadwal struct {
+// 	Jadwal map[string]string
+// 	Expiry time.Time
+// 	Date   string
+// }
 
-var (
-	jadwalCache       = make(map[string]cachedJadwal)
-	currentCachedDate string
-)
+// var (
+// 	jadwalCache       = make(map[string]cachedJadwal)
+// 	currentCachedDate string
+// )
 
 var localCache = cache.New(30*time.Minute, 10*time.Minute)
 
-func clearOldCacheIfNeeded() {
-	loc, _ := time.LoadLocation("Asia/Jakarta")
-	today := time.Now().In(loc).Format("2006-01-02")
+// func clearOldCacheIfNeeded() {
+// 	loc, _ := time.LoadLocation("Asia/Jakarta")
+// 	today := time.Now().In(loc).Format("2006-01-02")
 
-	if currentCachedDate != "" && currentCachedDate != today {
-		jadwalCache = make(map[string]cachedJadwal)
-	}
-	currentCachedDate = today
-}
+// 	if currentCachedDate != "" && currentCachedDate != today {
+// 		jadwalCache = make(map[string]cachedJadwal)
+// 	}
+// 	currentCachedDate = today
+// }
 
 // version with caching
 func SaveAbsenQR(c *fiber.Ctx) error {
@@ -134,19 +134,20 @@ func SaveAbsenQR(c *fiber.Ctx) error {
 			localCache.Set(codeKey, kotaCode, cache.DefaultExpiration)
 		}
 
-		clearOldCacheIfNeeded()
-
 		loc, _ := time.LoadLocation("Asia/Jakarta")
 		now := time.Now().In(loc)
 		date := now.Format("2006-01-02")
-		key := kotaCode + "-" + date
+		jadwalKey := fmt.Sprintf("jadwal:%s:%s", kotaCode, date)
 
 		var jadwal map[string]string
 
-		cached, found := jadwalCache[key]
-		if found && time.Now().Before(cached.Expiry) {
-			jadwal = cached.Jadwal
-		} else {
+		if cached, found := localCache.Get(jadwalKey); found {
+			if val, ok := cached.(map[string]string); ok {
+				jadwal = val
+			}
+		}
+
+		if jadwal == nil {
 			apiURL := "https://api.myquran.com/v2/sholat/jadwal/" + kotaCode + "/" + date
 			resp, err := http.Get(apiURL)
 			if err != nil {
@@ -167,11 +168,7 @@ func SaveAbsenQR(c *fiber.Ctx) error {
 			}
 
 			jadwal = result.Data.Jadwal
-			jadwalCache[key] = cachedJadwal{
-				Jadwal: jadwal,
-				Expiry: time.Now().Add(6 * time.Hour),
-				Date:   date,
-			}
+			localCache.Set(jadwalKey, jadwal, 6*time.Hour)
 		}
 
 		currentTime := now
