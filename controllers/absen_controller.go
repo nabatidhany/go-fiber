@@ -248,42 +248,42 @@ func SaveAbsenQR(c *fiber.Ctx) error {
 			return c.Status(400).JSON(fiber.Map{"error": "User sudah absen untuk sholat " + strings.Title(tag)})
 		}
 
-		var count int
-		err = database.DB.QueryRow(`
-			SELECT COUNT(*) FROM absensi 
-			WHERE event_id = ? AND tag = ? AND DATE(CONVERT_TZ(created_at, '+00:00', '+07:00')) = ? and mesin_id = ?
-		`, body.EventID, tag, date, body.MesinID).Scan(&count)
-		if err != nil {
-			log.Println("Error counting attendance:", err)
-			return c.Status(500).JSON(fiber.Map{"error": "Failed to count attendance"})
-		}
-		urutanKehadiran := count + 1
+		// var count int
+		// err = database.DB.QueryRow(`
+		// 	SELECT COUNT(*) FROM absensi
+		// 	WHERE event_id = ? AND tag = ? AND DATE(CONVERT_TZ(created_at, '+00:00', '+07:00')) = ? and mesin_id = ?
+		// `, body.EventID, tag, date, body.MesinID).Scan(&count)
+		// if err != nil {
+		// 	log.Println("Error counting attendance:", err)
+		// 	return c.Status(500).JSON(fiber.Map{"error": "Failed to count attendance"})
+		// }
+		// urutanKehadiran := count + 1
 
-		pointSholat := 0
-		switch strings.ToLower(tag) {
-		case "subuh":
-			pointSholat = 40
-		case "maghrib", "magrib":
-			pointSholat = 30
-		case "isya":
-			pointSholat = 30
-		}
+		// pointSholat := 0
+		// switch strings.ToLower(tag) {
+		// case "subuh":
+		// 	pointSholat = 40
+		// case "maghrib", "magrib":
+		// 	pointSholat = 30
+		// case "isya":
+		// 	pointSholat = 30
+		// }
 
-		pointHadir := 0
-		if urutanKehadiran <= 10 {
-			pointHadir = 11 - urutanKehadiran
-		}
+		// pointHadir := 0
+		// if urutanKehadiran <= 10 {
+		// 	pointHadir = 11 - urutanKehadiran
+		// }
 
-		totalPoint := pointSholat + pointHadir
+		// totalPoint := pointSholat + pointHadir
 
-		_, err = database.DB.Exec(`
-			INSERT INTO poin (user_id, tanggal, tag, point_sholat, point_kehadiran, total_point)
-			VALUES (?, ?, ?, ?, ?, ?)`,
-			userID, date, tag, pointSholat, pointHadir, totalPoint)
-		if err != nil {
-			log.Println("Error inserting point:", err)
-			return c.Status(500).JSON(fiber.Map{"error": "Failed to save point"})
-		}
+		// _, err = database.DB.Exec(`
+		// 	INSERT INTO poin (user_id, tanggal, tag, point_sholat, point_kehadiran, total_point)
+		// 	VALUES (?, ?, ?, ?, ?, ?)`,
+		// 	userID, date, tag, pointSholat, pointHadir, totalPoint)
+		// if err != nil {
+		// 	log.Println("Error inserting point:", err)
+		// 	return c.Status(500).JSON(fiber.Map{"error": "Failed to save point"})
+		// }
 	}
 
 	_, err := database.DB.Exec("INSERT INTO absensi (user_id, finger_id, jam, mesin_id, event_id, tag) VALUES (?, ?, ?, ?, ?, ?)",
