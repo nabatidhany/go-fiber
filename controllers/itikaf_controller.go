@@ -159,10 +159,12 @@ func GetRekapSholat(c *fiber.Ctx) error {
 			peserta.fullname,
 			TIME(CONVERT_TZ(absensi.created_at, '+00:00', '+07:00')) AS jam_local,
 			COALESCE(absensi.tag, '') AS tag,
-			petugas.id_masjid
+			petugas.id_masjid,
+			masjid.nama as masjid_name
 		FROM absensi
 		INNER JOIN peserta ON absensi.user_id = peserta.id
 		LEFT JOIN petugas ON absensi.mesin_id = petugas.id_user
+		LEFT JOIN masjid ON petugas.id_masjid = masjid.id
 		WHERE absensi.event_id = ?
 		AND DATE(CONVERT_TZ(absensi.created_at, '+00:00', '+07:00')) = ?
 		ORDER BY absensi.created_at ASC
@@ -170,13 +172,15 @@ func GetRekapSholat(c *fiber.Ctx) error {
 
 	rows, err := database.DB.Query(query, idEvent, tanggal)
 	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch data"})
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+
 	}
 	defer rows.Close()
 
 	type SholatStatus struct {
-		Status       bool `json:"status"`
-		InThisMasjid bool `json:"inThisMasjid"`
+		Status       bool   `json:"status"`
+		InThisMasjid bool   `json:"inThisMasjid"`
+		MasjidName   string `json:"masjidName,omitempty"`
 	}
 
 	type Rekap struct {
@@ -192,8 +196,9 @@ func GetRekapSholat(c *fiber.Ctx) error {
 		var tag string
 		var jam string
 		var masjidID string
+		var masjidName string
 
-		if err := rows.Scan(&userID, &name, &jam, &tag, &masjidID); err != nil {
+		if err := rows.Scan(&userID, &name, &jam, &tag, &masjidID, &masjidName); err != nil {
 			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
 
@@ -205,13 +210,27 @@ func GetRekapSholat(c *fiber.Ctx) error {
 			}
 		}
 
-		// jika tag sholat belum ada di data user ini, set status-nya
 		if _, exists := rekapMap[userID].Sholat[tag]; !exists {
-			rekapMap[userID].Sholat[tag] = SholatStatus{
+			inThisMasjid := masjidID == idMasjid
+			status := SholatStatus{
 				Status:       true,
-				InThisMasjid: masjidID == idMasjid,
+				InThisMasjid: inThisMasjid,
 			}
+
+			if !inThisMasjid {
+				status.MasjidName = masjidName
+			}
+
+			rekapMap[userID].Sholat[tag] = status
 		}
+
+		// // jika tag sholat belum ada di data user ini, set status-nya
+		// if _, exists := rekapMap[userID].Sholat[tag]; !exists {
+		// 	rekapMap[userID].Sholat[tag] = SholatStatus{
+		// 		Status:       true,
+		// 		InThisMasjid: masjidID == idMasjid,
+		// 	}
+		// }
 	}
 
 	// Filter hanya peserta yang pernah sholat di masjid ini
