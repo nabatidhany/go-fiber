@@ -226,33 +226,42 @@ func ViewCollection(c *fiber.Ctx) error {
 	inTags := "'" + strings.Join(sholatTags, "','") + "'"
 
 	// Build query absensi
-	var absenQuery string
-	if collection.MasjidID == "all" {
-		absenQuery = fmt.Sprintf(`
-			SELECT a.user_id, DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) as tanggal, a.tag
-			FROM absensi a
-			JOIN petugas p ON a.mesin_id = p.id_user
-			WHERE a.tag IN (%s)
-			  AND a.user_id IN (%s)
-			  AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) BETWEEN '%s' AND '%s'
-		`, inTags, inPeserta, dateFromStr, dateToStr)
-	} else {
-		masjidIDs := strings.Split(collection.MasjidID, ",")
-		for i := range masjidIDs {
-			masjidIDs[i] = strings.TrimSpace(masjidIDs[i])
-		}
-		inMasjid := strings.Join(masjidIDs, ",")
+	// var absenQuery string
+	// if collection.MasjidID == "all" {
+	// 	absenQuery = fmt.Sprintf(`
+	// 		SELECT a.user_id, DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) as tanggal, a.tag
+	// 		FROM absensi a
+	// 		JOIN petugas p ON a.mesin_id = p.id_user
+	// 		WHERE a.tag IN (%s)
+	// 		  AND a.user_id IN (%s)
+	// 		  AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) BETWEEN '%s' AND '%s'
+	// 	`, inTags, inPeserta, dateFromStr, dateToStr)
+	// } else {
+	// 	masjidIDs := strings.Split(collection.MasjidID, ",")
+	// 	for i := range masjidIDs {
+	// 		masjidIDs[i] = strings.TrimSpace(masjidIDs[i])
+	// 	}
+	// 	inMasjid := strings.Join(masjidIDs, ",")
 
-		absenQuery = fmt.Sprintf(`
-			SELECT a.user_id, DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) as tanggal, a.tag
-			FROM absensi a
-			JOIN petugas p ON a.mesin_id = p.id_user
-			WHERE p.id_masjid IN (%s)
-			  AND a.tag IN (%s)
-			  AND a.user_id IN (%s)
-			  AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) BETWEEN '%s' AND '%s'
-		`, inMasjid, inTags, inPeserta, dateFromStr, dateToStr)
-	}
+	// 	absenQuery = fmt.Sprintf(`
+	// 		SELECT a.user_id, DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) as tanggal, a.tag
+	// 		FROM absensi a
+	// 		JOIN petugas p ON a.mesin_id = p.id_user
+	// 		WHERE p.id_masjid IN (%s)
+	// 		  AND a.tag IN (%s)
+	// 		  AND a.user_id IN (%s)
+	// 		  AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) BETWEEN '%s' AND '%s'
+	// 	`, inMasjid, inTags, inPeserta, dateFromStr, dateToStr)
+	// }
+
+	absenQuery := fmt.Sprintf(`
+		SELECT a.user_id, DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) as tanggal, a.tag
+		FROM absensi a
+		JOIN petugas p ON a.mesin_id = p.id_user
+		WHERE a.tag IN (%s)
+			AND a.user_id IN (%s)
+			AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) BETWEEN '%s' AND '%s'
+	`, inTags, inPeserta, dateFromStr, dateToStr)
 
 	// Jalankan query absensi
 	absenRows, err := database.DB.Query(absenQuery)
