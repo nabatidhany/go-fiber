@@ -40,6 +40,10 @@ func SetupRoutes(app *fiber.App) {
 	apiV1.Get("/collections-get-meta/:slug", controllers.GetCollectionsMetaDetail)
 	apiV1.Post("/collections/add-peserta", controllers.AddPesertaToCollection)
 	apiV1.Get("/data-peserta-masjid", controllers.GetPesertaDanMasjid)
+	apiV1.Get("/collections-absensi/:slug", controllers.ViewCollectionNew)
+
+	apiV1.Get("/collections/category-collection", controllers.GetKategoriCollection)
+	apiV1.Get("/collections/collection-category", controllers.GetCollectionsByCategory)
 
 	user := api.Group("/users", middlewares.JWTMiddleware())
 	user.Get("/profile", controllers.GetProfile)

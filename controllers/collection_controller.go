@@ -280,26 +280,6 @@ func ViewCollection(c *fiber.Ctx) error {
 		absensiMap[userID][tanggal][tag] = true
 	}
 
-	// Bangun response
-	// var result []map[string]interface{}
-	// for userID, fullname := range pesertaMap {
-	// 	userAbsen := make(map[string]map[string]string)
-	// 	for _, date := range dates {
-	// 		userAbsen[date] = make(map[string]string)
-	// 		for _, tag := range sholatTags {
-	// 			if absensiMap[userID][date][tag] {
-	// 				userAbsen[date][tag] = "Y"
-	// 			} else {
-	// 				userAbsen[date][tag] = "N"
-	// 			}
-	// 		}
-	// 	}
-	// 	result = append(result, map[string]interface{}{
-	// 		"fullname": fullname,
-	// 		"absen":    userAbsen,
-	// 	})
-	// }
-
 	// Bangun response + hitung total 'Y' tiap peserta
 	type pesertaData struct {
 		Fullname string
@@ -355,50 +335,196 @@ func ViewCollection(c *fiber.Ctx) error {
 
 }
 
-// func GetCollectionsMeta(c *fiber.Ctx) error {
-// 	search := c.Query("search", "") // opsional pencarian nama
+func ViewCollectionNew(c *fiber.Ctx) error {
+	slug := c.Params("slug")
 
-// 	query := `
-// 		SELECT id, name, slug, date_start, date_end
-// 		FROM collections
-// 	`
-// 	var args []interface{}
+	// Ambil data collection
+	var collection struct {
+		ID          int64
+		Name        string
+		Slug        string
+		DateStart   string
+		DateEnd     string
+		MasjidID    string
+		SholatTrack string
+	}
+	err := database.DB.QueryRow(`
+		SELECT id, name, slug, date_start, date_end, masjid_id, tracking_code 
+		FROM collections 
+		WHERE slug = ?`, slug).Scan(
+		&collection.ID, &collection.Name, &collection.Slug,
+		&collection.DateStart, &collection.DateEnd, &collection.MasjidID, &collection.SholatTrack,
+	)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Collection not found"})
+	}
 
-// 	if search != "" {
-// 		query += " WHERE name LIKE ?"
-// 		args = append(args, "%"+search+"%")
-// 	}
+	sholatMap := map[string]string{
+		"1": "subuh", "2": "dzuhur", "3": "ashar", "4": "maghrib", "5": "isya",
+	}
 
-// 	rows, err := database.DB.Query(query, args...)
-// 	if err != nil {
-// 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-// 			"error": "Failed to retrieve collections",
-// 		})
-// 	}
-// 	defer rows.Close()
+	var sholatTags []string
+	for _, code := range strings.Split(collection.SholatTrack, ",") {
+		if tag, ok := sholatMap[code]; ok {
+			sholatTags = append(sholatTags, tag)
+		}
+	}
 
-// 	type CollectionMeta struct {
-// 		ID        int64  `json:"id"`
-// 		Name      string `json:"name"`
-// 		Slug      string `json:"slug"`
-// 		DateStart string `json:"date_start"`
-// 		DateEnd   string `json:"date_end"`
-// 	}
+	// Ambil peserta
+	pesertaRows, err := database.DB.Query(`
+		SELECT p.id, p.fullname 
+		FROM collection_items ci
+		JOIN peserta p ON ci.id_peserta = p.id
+		WHERE ci.collection_id = ?`, collection.ID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to get peserta"})
+	}
+	defer pesertaRows.Close()
 
-// 	var result []CollectionMeta
-// 	for rows.Next() {
-// 		var col CollectionMeta
-// 		err := rows.Scan(&col.ID, &col.Name, &col.Slug, &col.DateStart, &col.DateEnd)
-// 		if err != nil {
-// 			continue // skip error rows
-// 		}
-// 		result = append(result, col)
-// 	}
+	pesertaMap := make(map[int]string)
+	for pesertaRows.Next() {
+		var id int
+		var fullname string
+		pesertaRows.Scan(&id, &fullname)
+		pesertaMap[id] = fullname
+	}
+	if len(pesertaMap) == 0 {
+		return c.JSON(fiber.Map{"message": "No peserta found"})
+	}
 
-// 	return c.JSON(fiber.Map{
-// 		"collections": result,
-// 	})
-// }
+	dateFromStr := c.Query("date_from", time.Now().Format("2006-01-02"))
+	dateToStr := c.Query("date_to", dateFromStr)
+
+	dateFrom, _ := time.Parse("2006-01-02", dateFromStr)
+	dateTo, _ := time.Parse("2006-01-02", dateToStr)
+
+	var dates []string
+	for d := dateFrom; !d.After(dateTo); d = d.AddDate(0, 0, 1) {
+		dates = append(dates, d.Format("2006-01-02"))
+	}
+
+	var pesertaIDs []string
+	for id := range pesertaMap {
+		pesertaIDs = append(pesertaIDs, fmt.Sprintf("%d", id))
+	}
+	inPeserta := strings.Join(pesertaIDs, ",")
+	inTags := "'" + strings.Join(sholatTags, "','") + "'"
+
+	var absenQuery string
+	if collection.MasjidID == "all" {
+		absenQuery = fmt.Sprintf(`
+			SELECT a.user_id, DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) as tanggal, 
+				   a.tag, m.id as masjid_id, m.nama as masjid_name
+			FROM absensi a
+			JOIN petugas p ON a.mesin_id = p.id_user
+			JOIN masjid m ON p.id_masjid = m.id
+			WHERE a.tag IN (%s) AND a.user_id IN (%s)
+			  AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) BETWEEN '%s' AND '%s'
+		`, inTags, inPeserta, dateFromStr, dateToStr)
+	} else {
+		masjidIDs := strings.Split(collection.MasjidID, ",")
+		for i := range masjidIDs {
+			masjidIDs[i] = strings.TrimSpace(masjidIDs[i])
+		}
+		inMasjid := strings.Join(masjidIDs, ",")
+
+		absenQuery = fmt.Sprintf(`
+			SELECT a.user_id, DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) as tanggal, 
+				   a.tag, m.id as masjid_id, m.nama as masjid_name
+			FROM absensi a
+			JOIN petugas p ON a.mesin_id = p.id_user
+			JOIN masjid m ON p.id_masjid = m.id
+			WHERE p.id_masjid IN (%s) AND a.tag IN (%s) AND a.user_id IN (%s)
+			  AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) BETWEEN '%s' AND '%s'
+		`, inMasjid, inTags, inPeserta, dateFromStr, dateToStr)
+	}
+
+	absenRows, err := database.DB.Query(absenQuery)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to get absensi"})
+	}
+	defer absenRows.Close()
+
+	absensiMap := make(map[int]map[string]map[string]struct {
+		Status     string
+		MasjidID   int
+		MasjidName string
+	})
+
+	for absenRows.Next() {
+		var userID int
+		var tanggal time.Time
+		var tag string
+		var masjidID int
+		var masjidName string
+		absenRows.Scan(&userID, &tanggal, &tag, &masjidID, &masjidName)
+
+		tanggalStr := tanggal.Format("2006-01-02")
+		if absensiMap[userID] == nil {
+			absensiMap[userID] = make(map[string]map[string]struct {
+				Status     string
+				MasjidID   int
+				MasjidName string
+			})
+		}
+		if absensiMap[userID][tanggalStr] == nil {
+			absensiMap[userID][tanggalStr] = make(map[string]struct {
+				Status     string
+				MasjidID   int
+				MasjidName string
+			})
+		}
+		absensiMap[userID][tanggalStr][tag] = struct {
+			Status     string
+			MasjidID   int
+			MasjidName string
+		}{
+			Status:     "Y",
+			MasjidID:   masjidID,
+			MasjidName: masjidName,
+		}
+	}
+
+	var result []map[string]interface{}
+	for userID, fullname := range pesertaMap {
+		userAbsen := make(map[string]map[string]interface{})
+		totalY := 0
+
+		for _, date := range dates {
+			userAbsen[date] = make(map[string]interface{})
+			for _, tag := range sholatTags {
+				if data, ok := absensiMap[userID][date][tag]; ok {
+					userAbsen[date][tag] = map[string]interface{}{
+						"status":      "Y",
+						"masjid_id":   data.MasjidID,
+						"masjid_name": data.MasjidName,
+					}
+					totalY++
+				} else {
+					userAbsen[date][tag] = map[string]interface{}{
+						"status": "N",
+					}
+				}
+			}
+		}
+
+		result = append(result, map[string]interface{}{
+			"fullname": fullname,
+			"absen":    userAbsen,
+			"total":    totalY,
+		})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i]["total"].(int) > result[j]["total"].(int)
+	})
+
+	return c.JSON(fiber.Map{
+		"sholat_tracked": sholatTags,
+		"dates":          dates,
+		"data":           result,
+	})
+}
 
 func GetCollectionsMeta(c *fiber.Ctx) error {
 	rows, err := database.DB.Query(`
@@ -725,202 +851,141 @@ func AddPesertaToCollection(c *fiber.Ctx) error {
 	})
 }
 
-// func GetCollectionsMetaDetail(c *fiber.Ctx) error {
-// 	slug := c.Params("slug")
-// 	query := `
-// 		SELECT id, name, slug, date_start, date_end, masjid_id
-// 		FROM collections WHERE slug = ?
-// 	`
+func GetKategoriCollection(c *fiber.Ctx) error {
+	rows, err := database.DB.Query(`SELECT id, category_name FROM category_collection ORDER BY category_name ASC`)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Gagal mengambil data kategori",
+		})
+	}
+	defer rows.Close()
 
-// 	row := database.DB.QueryRow(query, slug)
+	var categories []fiber.Map
+	for rows.Next() {
+		var id int
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Gagal membaca data kategori",
+			})
+		}
+		categories = append(categories, fiber.Map{
+			"id":   id,
+			"name": name,
+		})
+	}
 
-// 	type CollectionMeta struct {
-// 		ID        int64  `json:"id"`
-// 		Name      string `json:"name"`
-// 		Slug      string `json:"slug"`
-// 		DateStart string `json:"date_start"`
-// 		DateEnd   string `json:"date_end"`
-// 		MasjidID  string `json:"masjid_id"`
-// 	}
+	return c.JSON(fiber.Map{
+		"categories": categories,
+	})
+}
 
-// 	var result CollectionMeta
-// 	err := row.Scan(&result.ID, &result.Name, &result.Slug, &result.DateStart, &result.DateEnd, &result.MasjidID)
-// 	if err != nil {
-// 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-// 			"error": "Collection not found",
-// 		})
-// 	}
+func GetCollectionsByCategory(c *fiber.Ctx) error {
+	idCategory := c.Query("id_category")
+	idMasjid := c.Query("id_masjid") // optional
 
-// 	return c.JSON(fiber.Map{
-// 		"collections": result,
-// 	})
-// }
+	if idCategory == "" {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+			"error": "Parameter id_category wajib diisi",
+		})
+	}
 
-// func ViewCollection(c *fiber.Ctx) error {
-// 	slug := c.Params("slug")
+	// Ambil collection_id yang terhubung dengan category_id
+	rows, err := database.DB.Query(`
+		SELECT dc.collection_id 
+		FROM detail_category_collection dc
+		WHERE dc.category_id = ?`, idCategory)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Gagal mengambil data detail category collection",
+		})
+	}
+	defer rows.Close()
 
-// 	// Ambil data collection
-// 	var collection struct {
-// 		ID          int64
-// 		Name        string
-// 		Slug        string
-// 		DateStart   string
-// 		DateEnd     string
-// 		MasjidID    string
-// 		SholatTrack string
-// 	}
-// 	err := database.DB.QueryRow(`
-//         SELECT id, name, slug, date_start, date_end, masjid_id, tracking_code
-//         FROM collections
-//         WHERE slug = ?`, slug).Scan(
-// 		&collection.ID, &collection.Name, &collection.Slug,
-// 		&collection.DateStart, &collection.DateEnd, &collection.MasjidID, &collection.SholatTrack,
-// 	)
-// 	if err != nil {
-// 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Collection not found"})
-// 	}
+	var collectionIDs []int
+	for rows.Next() {
+		var cid int
+		if err := rows.Scan(&cid); err != nil {
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Gagal membaca data collection_id",
+			})
+		}
+		collectionIDs = append(collectionIDs, cid)
+	}
 
-// 	// Map kode sholat ke nama tag
-// 	sholatMap := map[string]string{
-// 		"1": "subuh",
-// 		"2": "dzuhur",
-// 		"3": "ashar",
-// 		"4": "maghrib",
-// 		"5": "isya",
-// 	}
+	if len(collectionIDs) == 0 {
+		return c.JSON(fiber.Map{
+			"collections": []fiber.Map{},
+		})
+	}
 
-// 	// Ambil sholat tags dari collection
-// 	var sholatTags []string
-// 	for _, code := range strings.Split(collection.SholatTrack, ",") {
-// 		if tag, ok := sholatMap[code]; ok {
-// 			sholatTags = append(sholatTags, tag)
-// 		}
-// 	}
+	// Build IN clause
+	var inClause string
+	for i, id := range collectionIDs {
+		if i > 0 {
+			inClause += ","
+		}
+		inClause += fmt.Sprintf("%d", id)
+	}
 
-// 	// Ambil peserta: id dan fullname
-// 	pesertaRows, err := database.DB.Query(`
-//         SELECT p.id, p.fullname
-//         FROM collection_items ci
-//         JOIN peserta p ON ci.id_peserta = p.id
-//         WHERE ci.collection_id = ?`, collection.ID)
-// 	if err != nil {
-// 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to get peserta"})
-// 	}
-// 	defer pesertaRows.Close()
+	// Query collections
+	var query string
+	if idMasjid != "" {
+		query = fmt.Sprintf(`
+			SELECT id, name, slug, masjid_id 
+			FROM collections 
+			WHERE id IN (%s)
+		`, inClause)
+	} else {
+		query = fmt.Sprintf(`
+			SELECT id, name, slug, masjid_id 
+			FROM collections 
+			WHERE id IN (%s)
+		`, inClause)
+	}
 
-// 	pesertaMap := make(map[int]string) // id -> fullname
-// 	for pesertaRows.Next() {
-// 		var id int
-// 		var fullname string
-// 		pesertaRows.Scan(&id, &fullname)
-// 		pesertaMap[id] = fullname
-// 	}
+	cRows, err := database.DB.Query(query)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Gagal mengambil data collections",
+		})
+	}
+	defer cRows.Close()
 
-// 	if len(pesertaMap) == 0 {
-// 		return c.JSON(fiber.Map{"message": "No peserta found"})
-// 	}
+	var collections []fiber.Map
+	for cRows.Next() {
+		var id int
+		var name, slug, masjidID string
+		if err := cRows.Scan(&id, &name, &slug, &masjidID); err != nil {
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Gagal membaca data collections",
+			})
+		}
 
-// 	// Ambil tanggal dari parameter, default ke hari ini jika tidak ada
-// 	dateFromStr := c.Query("date_from", time.Now().Format("2006-01-02"))
-// 	dateToStr := c.Query("date_to", dateFromStr)
+		// Jika ada idMasjid, filter masjid_id
+		include := true
+		if idMasjid != "" && masjidID != "all" {
+			ids := strings.Split(masjidID, ",")
+			include = false
+			for _, mID := range ids {
+				if strings.TrimSpace(mID) == idMasjid {
+					include = true
+					break
+				}
+			}
+		}
 
-// 	// Parse tanggal
-// 	dateFrom, err := time.Parse("2006-01-02", dateFromStr)
-// 	if err != nil {
-// 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid date_from format"})
-// 	}
-// 	dateTo, err := time.Parse("2006-01-02", dateToStr)
-// 	if err != nil {
-// 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid date_to format"})
-// 	}
+		if include {
+			collections = append(collections, fiber.Map{
+				"id":     id,
+				"name":   name,
+				"slug":   slug,
+				"masjid": masjidID,
+			})
+		}
+	}
 
-// 	// Generate list tanggal antara dateFrom dan dateTo
-// 	var dates []string
-// 	for d := dateFrom; !d.After(dateTo); d = d.AddDate(0, 0, 1) {
-// 		dates = append(dates, d.Format("2006-01-02"))
-// 	}
-
-// 	// Ambil semua absensi dalam periode untuk semua peserta dan tag
-// 	pesertaIDs := []string{}
-// 	for id := range pesertaMap {
-// 		pesertaIDs = append(pesertaIDs, fmt.Sprintf("%d", id))
-// 	}
-// 	inPeserta := strings.Join(pesertaIDs, ",")
-
-// 	inTags := "'" + strings.Join(sholatTags, "','") + "'"
-
-// 	// Cek dan format masjid_id agar aman untuk query IN
-// 	masjidIDs := []string{}
-// 	for _, id := range strings.Split(collection.MasjidID, ",") {
-// 		id = strings.TrimSpace(id)
-// 		if id != "" {
-// 			masjidIDs = append(masjidIDs, id)
-// 		}
-// 	}
-// 	inMasjid := strings.Join(masjidIDs, ",")
-
-// 	// Query absensi
-// 	absenQuery := fmt.Sprintf(`
-//         SELECT a.user_id, DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) as tanggal, a.tag
-//         FROM absensi a
-//         JOIN petugas p ON a.mesin_id = p.id_user
-//         WHERE p.id_masjid IN (%s)
-//           AND a.tag IN (%s)
-//           AND a.user_id IN (%s)
-//           AND DATE(CONVERT_TZ(a.created_at, '+00:00', '+07:00')) BETWEEN '%s' AND '%s'
-//     `, inMasjid, inTags, inPeserta, dateFromStr, dateToStr)
-
-// 	absenRows, err := database.DB.Query(absenQuery)
-// 	if err != nil {
-// 		fmt.Println("Error executing query:", err)
-// 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to get absensi"})
-// 	}
-// 	defer absenRows.Close()
-
-// 	// Map absensi: user_id -> tanggal -> tag -> true
-// 	absensiMap := make(map[int]map[string]map[string]bool)
-// 	for absenRows.Next() {
-// 		var userID int
-// 		var tanggalRaw time.Time
-// 		var tag string
-// 		absenRows.Scan(&userID, &tanggalRaw, &tag)
-
-// 		tanggal := tanggalRaw.Format("2006-01-02")
-
-// 		if _, ok := absensiMap[userID]; !ok {
-// 			absensiMap[userID] = make(map[string]map[string]bool)
-// 		}
-// 		if _, ok := absensiMap[userID][tanggal]; !ok {
-// 			absensiMap[userID][tanggal] = make(map[string]bool)
-// 		}
-// 		absensiMap[userID][tanggal][tag] = true
-// 	}
-
-// 	// Bangun output
-// 	var result []map[string]interface{}
-// 	for userID, fullname := range pesertaMap {
-// 		userAbsen := make(map[string]map[string]string)
-
-// 		for _, date := range dates {
-// 			userAbsen[date] = make(map[string]string)
-// 			for _, tag := range sholatTags {
-// 				if absensiMap[userID][date][tag] {
-// 					userAbsen[date][tag] = "Y"
-// 				} else {
-// 					userAbsen[date][tag] = "N"
-// 				}
-// 			}
-// 		}
-
-// 		result = append(result, map[string]interface{}{
-// 			"fullname": fullname,
-// 			"absen":    userAbsen,
-// 		})
-// 	}
-
-// 	return c.JSON(fiber.Map{
-// 		"sholat_tracked": sholatTags,
-// 		"dates":          dates,
-// 		"data":           result,
-// 	})
-// }
+	return c.JSON(fiber.Map{
+		"collections": collections,
+	})
+}
