@@ -124,7 +124,7 @@ func GetAbsensiStatistics(c *fiber.Ctx) error {
 		JOIN peserta p ON p.id = absen_unik.user_id
 	) AS gender ON 1=1
 	JOIN (
-		SELECT COUNT(*) AS total_peserta_terdaftar FROM peserta
+		SELECT COUNT(*) AS total_peserta_terdaftar FROM detail_peserta where id_event = 3
 	) AS all_peserta ON 1=1
 	GROUP BY tag, kategori;
 	`
